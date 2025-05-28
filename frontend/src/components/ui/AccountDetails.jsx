@@ -10,6 +10,7 @@ const CustomerAccount = () => {
 
   const [customer, setCustomer] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [transactionId, setTransactionId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedTransaction, setExpandedTransaction] = useState(null); // <-- Added state
@@ -44,12 +45,47 @@ const CustomerAccount = () => {
     };
 
     fetchData();
-  }, [customerId]);
+  }, [customerId, transactionId]);
 
   const handleEdit = (transaction) => {
     setSelectedTransaction(transaction);
     setShowEditModal(true);
   };
+
+  // Assuming you are using React
+  const handleFullyPaid = async (transaction) => {
+    debugger;
+    console.log(transaction);
+    const updatedTransaction = {
+      ...transaction,
+      dueAmount: 0, 
+    paidAmount: transaction.grandTotal, 
+    };
+  
+    try {
+      debugger;
+      const res = await fetch(`http://localhost:8000/api/transactions/${transaction.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedTransaction),
+      });
+  
+      if (!res.ok) {
+        throw new Error("Failed to update transaction");
+      }
+  
+      const data = await res.json();
+      handleUpdateTransaction(data);
+      setTransactionId(transaction.id); // Update your frontend state/UI
+    } catch (error) {
+      console.error("Error marking as fully paid:", error);
+    }
+  };
+  
+
+  
 
   const handleCloseModal = () => {
     setShowEditModal(false);
@@ -63,7 +99,10 @@ const CustomerAccount = () => {
       prev.map(txn => txn._id === updatedTransaction._id ? updatedTransaction : txn)
     );
   
-    setTimeout(() => window.location.reload(), 100);
+    // setTimeout(() => window.location.reload(), 100);
+    handleCloseModal();
+    setTransactionId(updatedTransaction.id);
+    
     
   } catch (error) {
     console.error("Update failed:", error);
@@ -72,10 +111,12 @@ const CustomerAccount = () => {
 };
 
   const toggleTransaction = (txnId) => {
-      // This will toggle only the clicked transaction
+    debugger;
+      console.log(txnId)
       setExpandedTransaction(expandedTransaction === txnId ? null : txnId);
 
   };
+
 
   const totalAmount = transactions.reduce((sum, txn) => sum + (txn.grandTotal || 0), 0);
   const totalPaid = transactions.reduce((sum, txn) => sum + (txn.paidAmount || 0), 0);
@@ -216,10 +257,10 @@ const CustomerAccount = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {transactions.map((txn, txnIndex) => (
-                    <React.Fragment key={txn._id}>
+                    <React.Fragment key={txn.id}>
                       <tr 
                         className="hover:bg-gray-50 transition-colors cursor-pointer" 
-                        onClick={() => toggleTransaction(txn._id)}
+                        onClick={() => toggleTransaction(txn.id)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {txnIndex + 1}
@@ -231,7 +272,7 @@ const CustomerAccount = () => {
                               {txn.products[0]?.productName || 'No Product'}
                               </div>
                               <div className="text-xs text-blue-500 underline">
-                                Click to view details
+                                View details
                               </div>
                             </div>
                           </div>
@@ -263,17 +304,22 @@ const CustomerAccount = () => {
                             {txn.dueAmount > 0 ? 'Pending' : 'Completed'}
                           </span>
                         </td>
-                        <td className="flex space-x-2">
+                        <td className="flex space-x-2 px-4 py-6">
                         <button
                       onClick={() => handleEdit(txn)}
-                      className="px-2 py-1 text-sm text-blue-600 hover:underline"
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${ 'bg-slate-500 text-white'
+                      }`}
                     >
                       Edit
                     </button>
+                    {txn.dueAmount > 0 && (<button className={`px-2.5 py-1 rounded-full text-xs font-medium ${ 'bg-blue-600 text-white'
+                      }`}
+                       onClick={() => handleFullyPaid(txn)}>fullyPay</button>)}
+
                           </td>
                       </tr>
 
-                      {expandedTransaction === txn._id && (
+                      {expandedTransaction === txn.id && (
                         <tr className="bg-gray-50">
                           <td colSpan="5" className="px-6 py-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

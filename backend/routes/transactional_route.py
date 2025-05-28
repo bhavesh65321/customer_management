@@ -27,3 +27,16 @@ def update_transactions(
     db: Session = Depends(get_db)
 ):
     return update_transaction(db, transaction_id, transaction)
+
+
+# @router.put("/transactions/{transaction_id}/fullypaid")
+# def mark_fully_paid(transaction_id: int, db: Session = Depends(get_db)):
+#     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+#     if not transaction:
+#         raise HTTPException(status_code=404, detail="Transaction not found")
+    
+#     transaction.due_amount = 0
+#     transaction.status = "paid"  # Assuming your model has a 'status' field
+#     db.commit()
+#     db.refresh(transaction)
+#     return transaction  

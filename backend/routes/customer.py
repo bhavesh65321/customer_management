@@ -85,6 +85,7 @@ async def get_customer(customer_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print("❌ Error fetching customer:", e)
         raise HTTPException(status_code=500, detail=str(e))
+          
 
 
 
