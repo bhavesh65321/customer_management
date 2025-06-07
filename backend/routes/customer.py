@@ -31,6 +31,35 @@ def add_customer(customer: CustomerCreate,  db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+@router.put("/update/{customer_id}", response_model=CustomerResponse, include_in_schema=True)
+def update_customer(customer_id: int, updated_data: CustomerCreate, db: Session = Depends(get_db)):
+    try:
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        customer.name = updated_data.name
+        customer.father_name = updated_data.father_name
+        customer.primary_phone = updated_data.primary_phone
+        customer.secondary_phone = updated_data.secondary_phone
+        customer.address = updated_data.address
+        customer.city = updated_data.city
+        customer.pincode = updated_data.pincode
+        customer.gender = updated_data.gender
+        customer.country = updated_data.country
+
+        db.commit()
+        db.refresh(customer)
+        return customer
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
 
 @router.get("/search", response_model=List[CustomerResponse], include_in_schema=True)
 def search_customers(query: str = "", db: Session = Depends(get_db)):
@@ -85,6 +114,17 @@ async def get_customer(customer_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print("❌ Error fetching customer:", e)
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.delete("/delete/{customer_id}")
+def delete_customer(customer_id: int, db: Session = Depends(get_db)):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    db.delete(customer)
+    db.commit()
+    return {"message": "Customer deleted successfully"}
+
           
 
 

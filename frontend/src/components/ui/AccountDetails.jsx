@@ -22,8 +22,8 @@ const CustomerAccount = () => {
       try {
         setLoading(true);
         const [customerRes, transactionsRes] = await Promise.all([
-          fetch(`http://localhost:8000/api/customer/${customerId}`),
-          fetch(`http://localhost:8000/api/transactions/${customerId}`)
+          fetch(`http://localhost:5000/api/customer/${customerId}`),
+          fetch(`http://localhost:5000/api/transactions/${customerId}`)
         ]);
 
         if (!customerRes.ok || !transactionsRes.ok) {

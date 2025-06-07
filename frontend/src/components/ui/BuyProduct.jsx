@@ -74,7 +74,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
     console.log(transactionData);
     console.log(JSON.stringify(transactionData))
 
-    fetch("http://localhost:8000/api/transactions/add", {
+    fetch("http://localhost:5000/api/transactions/add", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

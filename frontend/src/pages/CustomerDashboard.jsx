@@ -5,6 +5,7 @@ import { Select } from "../components/ui/Select";
 import AddCustomerDrawer from "../components/ui/AddCustomer";
 import BuyProduct from "../components/ui/BuyProduct";
 import { useNavigate } from 'react-router-dom';
+import ConfirmDialog from '../components/ui/ConfirmationPop'; 
 
 export default function CustomerDashboard() {
   const [showDrawer, setShowDrawer] = useState(false);
@@ -15,6 +16,9 @@ export default function CustomerDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showBuyPopup, setShowBuyPopup] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+ 
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export default function CustomerDashboard() {
       if (filter) query.append("status", filter);
       if (sort) query.append("sort", sort);
 
-      const res = await fetch(`http://localhost:8000/api/customer/all?${query.toString()}`);
+      const res = await fetch(`http://localhost:5000/api/customer/all?${query.toString()}`);
       const data = await res.json();
       setCustomers(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -39,7 +43,9 @@ export default function CustomerDashboard() {
     }
   };
 
+
   const handleAddCustomer = async (customerData) => {
+    debugger;
     const payload = {
       name: customerData.name,
       father_name: customerData.fatherName,
@@ -51,25 +57,87 @@ export default function CustomerDashboard() {
       gender: customerData.gender,
       country: customerData.country,
     };
-
+  
     try {
-      const res = await fetch("http://localhost:8000/api/customer/add", {
-        method: "POST",
+      const url = selectedCustomer
+        ? `http://localhost:5000/api/customer/update/${selectedCustomer.id}`
+        : "http://localhost:5000/api/customer/add";
+  
+      const method = selectedCustomer ? "PUT" : "POST";
+  
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
+  
       if (res.ok) {
         setShowDrawer(false);
+        setSelectedCustomer(null);
         fetchCustomers();
       } else {
-        alert("Failed to add customer");
+        alert("Failed to save customer");
       }
     } catch (err) {
       console.error(err);
       alert("Something went wrong.");
     }
   };
+
+  const handleDeleteCustomer = async () => {
+    if (!customerToDelete) return;
+  
+    try {
+      const res = await fetch(`http://localhost:5000/api/customer/delete/${customerToDelete.id}`, {
+        method: 'DELETE',
+      });
+  
+      if (res.ok) {
+        setCustomers(customers.filter((c) => c.id !== customerToDelete.id));
+        setShowDeleteModal(false);
+        setCustomerToDelete(null);
+      } else {
+        alert("Failed to delete customer.");
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Something went wrong.");
+    }
+  };
+  
+  
+
+  // const handleAddCustomer = async (customerData) => {
+  //   const payload = {
+  //     name: customerData.name,
+  //     father_name: customerData.fatherName,
+  //     primary_phone: customerData.phonePrimary,
+  //     secondary_phone: customerData.phoneSecondary,
+  //     address: customerData.address,
+  //     city: customerData.city,
+  //     pincode: customerData.pincode,
+  //     gender: customerData.gender,
+  //     country: customerData.country,
+  //   };
+
+  //   try {
+  //     const res = await fetch("http://localhost:5000/api/customer/add", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify(payload),
+  //     });
+
+  //     if (res.ok) {
+  //       setShowDrawer(false);
+  //       fetchCustomers();
+  //     } else {
+  //       alert("Failed to add customer");
+  //     }
+  //   } catch (err) {
+  //     console.error(err);
+  //     alert("Something went wrong.");
+  //   }
+  // };
 
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch =
@@ -222,8 +290,9 @@ export default function CustomerDashboard() {
                     <td className="px-4 py-3 text-right space-x-2">
                       <button onClick={() => navigate(`/customer/${customer.id}`)} className="text-blue-600">View</button>
                       <button onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }} className="text-green-600">Buy</button>
-                      <button className="text-yellow-600">Edit</button>
-                      <button className="text-red-600">Delete</button>
+                      <button onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }} className="text-yellow-600">Edit</button>
+                      <button onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }} className="text-red-600">Delete</button>
+
                     </td>
                   </tr>
                 ))}
@@ -234,10 +303,30 @@ export default function CustomerDashboard() {
       </div>
 
       {/* Modals */}
-      <AddCustomerDrawer
+      {/* <AddCustomerDrawer
         isOpen={showDrawer}
         onClose={() => setShowDrawer(false)}
         onAdd={handleAddCustomer}
+      /> */}
+      
+      <AddCustomerDrawer
+      isOpen={showDrawer}
+      onClose={() => {
+        setShowDrawer(false);
+        setSelectedCustomer(null); // reset selected customer on close
+        }}
+      onAdd={handleAddCustomer}
+      initialData={selectedCustomer}
+      />
+
+      <ConfirmDialog
+        open={showDeleteModal}
+        title="Delete Customer"
+        content="Are you sure you want to delete this customer? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteCustomer}
+        onCancel={() => setShowDeleteModal(false)}
       />
 
       {showBuyPopup && selectedCustomer && (

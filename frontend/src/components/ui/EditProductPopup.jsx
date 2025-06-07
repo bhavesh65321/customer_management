@@ -115,7 +115,7 @@ const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
     console.log(transactionData);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/transactions/${productData.id}`, {
+      const response = await fetch(`http://localhost:5000/api/transactions/${productData.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

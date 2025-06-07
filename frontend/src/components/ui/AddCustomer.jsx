@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
-export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
+export default function AddCustomerDrawer({ isOpen, onClose, onAdd, initialData }) {
   const [formData, setFormData] = useState({
     name: "",
-    fatherName: "",
+    father_name: "",
     phonePrimary: "",
     phoneSecondary: "",
     address: "",
@@ -13,27 +13,46 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
     country: "India",
   });
 
+  // Update formData when initialData changes (i.e., when editing an existing customer)
+  useEffect(() => {
+    if (isOpen && initialData) {
+      debugger;
+      setFormData({
+        name: initialData.name || "",
+        fatherName: initialData.father_name || "",
+        phonePrimary: initialData.primary_phone || "",
+        phoneSecondary: initialData.secondary_phone || "",
+        address: initialData.address || "",
+        city: initialData.city || "",
+        pincode: initialData.pincode || "",
+        gender: initialData.gender || "Male",
+        country: initialData.country || "India",
+      });
+    } else if (!isOpen) {
+      // Reset when drawer closes
+      setFormData({
+        name: "",
+        father_name: "",
+        phone_primary: "",
+        phone_secondary: "",
+        address: "",
+        city: "",
+        pincode: "",
+        gender: "Male",
+        country: "India",
+      });
+    }
+  }, [isOpen, initialData]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = () => {
-    debugger;
-    console.log(formData);
-    onAdd(formData);
+    onAdd(formData); // Send form data to parent (either for add or update)
     onClose();
-    setFormData({
-      name: "",
-      fatherName: "",
-      phonePrimary: "",
-      phoneSecondary: "",
-      address: "",
-      city: "",
-      pincode: "",
-      gender: "Male",
-      country: "India",
-    });
+    // formData reset handled by useEffect when drawer closes
   };
 
   if (!isOpen) return null;
@@ -43,7 +62,9 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center border-b pb-3">
-          <h2 className="text-lg font-semibold text-gray-800">Add New Customer</h2>
+          <h2 className="text-lg font-semibold text-gray-800">
+            {initialData ? "Edit Customer" : "Add New Customer"}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-red-500 text-2xl leading-none"
@@ -54,6 +75,9 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
 
         {/* Form */}
         <div className="space-y-4 text-sm text-gray-700">
+          {/* ... all your input fields unchanged, using formData and handleChange ... */}
+          {/* (Keep the input fields as you already have) */}
+          {/* Example: */}
           <div>
             <label className="block mb-1 font-medium">Name</label>
             <input
@@ -155,6 +179,8 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
               <option>Other</option>
             </select>
           </div>
+          {/* Repeat for other fields */}
+          {/* ... */}
         </div>
 
         {/* Submit Button */}
@@ -163,7 +189,7 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd }) {
             onClick={handleSubmit}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-medium transition-colors"
           >
-            Add Customer
+            {initialData ? "Update Customer" : "Add Customer"}
           </button>
         </div>
       </div>
