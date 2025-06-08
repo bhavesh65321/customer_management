@@ -7,6 +7,7 @@ import AddCustomer from "./components/ui/AddCustomer";
 import BuyProduct from "./components/ui/BuyProduct";
 import CustomerAccount from "./components/ui/AccountDetails";
 import EditProductPopup from "./components/ui/EditProductPopup";
+import Home from "./pages/Home";
 
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/customer/:customerId" element={<CustomerAccount />} />
         <Route path="/transactions/:customerId" element={<CustomerAccount />} />
         <Route path="/transactions" element={<EditProductPopup />} />
+        <Route path = "/home" element ={<Home/>} />
         {/* Add more routes later */}
       </Routes>
     </Router>

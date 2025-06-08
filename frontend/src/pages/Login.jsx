@@ -28,7 +28,8 @@ export default function Login() {
       if (!response.ok) throw new Error(data.message || "Login failed");
 
       localStorage.setItem("token", data.token);
-      navigate("/customerDashboard");
+      navigate('/home');
+      // navigate("/customerDashboard");
     } catch (err) {
       setError(err.message);
     }
