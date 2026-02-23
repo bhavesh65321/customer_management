@@ -1,24 +1,28 @@
-from fastapi import HTTPException, Depends, status
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
-from config.database import get_db
 from models.transactional import Transaction
+from models.invoice import Invoice
 from schemas.transaction_schema import TransactionCreate, TransactionResponse, TransactionUpdate
+
 
 def create_transaction(db: Session, transaction_data: TransactionCreate):
     try:
         db_transaction = Transaction(
             customer_id=transaction_data.customerId,
             customer_name=transaction_data.customerName,
-            products=[product.dict() for product in transaction_data.products],
+            products=[p.dict() for p in transaction_data.products] if transaction_data.products else [],
             paid_amount=transaction_data.paidAmount,
             due_amount=transaction_data.dueAmount,
             grand_total=transaction_data.grandTotal,
-            date=transaction_data.date
+            date=transaction_data.date,
         )
         db.add(db_transaction)
         db.commit()
         db.refresh(db_transaction)
+        invoice = Invoice(transaction_id=db_transaction.id)
+        db.add(invoice)
+        db.commit()
         return db_transaction
     except Exception as e:
         db.rollback()
