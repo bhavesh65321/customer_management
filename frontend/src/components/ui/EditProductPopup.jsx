@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
+import { authHeaders, API_BASE } from "../../api";
 
 const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
   // Initialize state with proper fallbacks
@@ -115,12 +116,9 @@ const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
     console.log(transactionData);
 
     try {
-      const response = await fetch(`http://localhost:5000/api/transactions/${productData.id}`, {
+      const response = await fetch(`${API_BASE}/api/transactions/${productData.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+        headers: authHeaders(),
         body: JSON.stringify(transactionData),
       });
 

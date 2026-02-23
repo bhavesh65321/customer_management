@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
+import { authHeaders, API_BASE } from "../../api";
 
 const BuyProduct = ({ customer, isOpen, onClose }) => {
 
@@ -74,11 +75,9 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
     console.log(transactionData);
     console.log(JSON.stringify(transactionData))
 
-    fetch("http://localhost:5000/api/transactions/add", {
+    fetch(`${API_BASE}/api/transactions/add`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify(transactionData),
     })
       .then((res) => {

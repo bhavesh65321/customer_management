@@ -25,11 +25,17 @@ export default function Login() {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.message || "Login failed");
+      if (!response.ok) throw new Error(data.detail || data.message || "Login failed");
 
       localStorage.setItem("token", data.token);
-      navigate('/home');
-      // navigate("/customerDashboard");
+      try {
+        const payload = JSON.parse(atob(data.token.split(".")[1]));
+        if (payload.role === "customer") {
+          navigate("/customer/dashboard");
+          return;
+        }
+      } catch (_) {}
+      navigate("/home");
     } catch (err) {
       setError(err.message);
     }

@@ -4,8 +4,9 @@ import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import AddCustomerDrawer from "../components/ui/AddCustomer";
 import BuyProduct from "../components/ui/BuyProduct";
-import { useNavigate } from 'react-router-dom';
-import ConfirmDialog from '../components/ui/ConfirmationPop'; 
+import { useNavigate } from "react-router-dom";
+import ConfirmDialog from "../components/ui/ConfirmationPop";
+import { authHeaders, API_BASE } from "../api"; 
 
 export default function CustomerDashboard() {
   const [showDrawer, setShowDrawer] = useState(false);
@@ -18,7 +19,9 @@ export default function CustomerDashboard() {
   const [showBuyPopup, setShowBuyPopup] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
- 
+  const [inviteLink, setInviteLink] = useState(null);
+  const [inviteCustomer, setInviteCustomer] = useState(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -32,8 +35,13 @@ export default function CustomerDashboard() {
       if (searchTerm) query.append("search", searchTerm);
       if (filter) query.append("status", filter);
       if (sort) query.append("sort", sort);
-
-      const res = await fetch(`http://localhost:5000/api/customer/all?${query.toString()}`);
+      const res = await fetch(`${API_BASE}/api/customer/all?${query.toString()}`, {
+        headers: authHeaders(),
+      });
+      if (res.status === 401) {
+        navigate("/login");
+        return;
+      }
       const data = await res.json();
       setCustomers(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -45,7 +53,6 @@ export default function CustomerDashboard() {
 
 
   const handleAddCustomer = async (customerData) => {
-    debugger;
     const payload = {
       name: customerData.name,
       father_name: customerData.fatherName,
@@ -56,27 +63,29 @@ export default function CustomerDashboard() {
       pincode: customerData.pincode,
       gender: customerData.gender,
       country: customerData.country,
+      email: customerData.email,
     };
-  
     try {
       const url = selectedCustomer
-        ? `http://localhost:5000/api/customer/update/${selectedCustomer.id}`
-        : "http://localhost:5000/api/customer/add";
-  
+        ? `${API_BASE}/api/customer/update/${selectedCustomer.id}`
+        : `${API_BASE}/api/customer/add`;
       const method = selectedCustomer ? "PUT" : "POST";
-  
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(payload),
       });
-  
+      if (res.status === 401) {
+        navigate("/login");
+        return;
+      }
       if (res.ok) {
         setShowDrawer(false);
         setSelectedCustomer(null);
         fetchCustomers();
       } else {
-        alert("Failed to save customer");
+        const d = await res.json().catch(() => ({}));
+        alert(d.detail || "Failed to save customer");
       }
     } catch (err) {
       console.error(err);
@@ -84,14 +93,37 @@ export default function CustomerDashboard() {
     }
   };
 
+  const handleCreateInvite = async (customer) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/customer/invite/${customer.id}`,
+        { method: "POST", headers: authHeaders() }
+      );
+      if (res.status === 401) {
+        navigate("/login");
+        return;
+      }
+      const data = await res.json();
+      const fullLink = `${window.location.origin}${data.invite_link}`;
+      setInviteLink(fullLink);
+      setInviteCustomer(customer);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create invite.");
+    }
+  };
+
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
-  
     try {
-      const res = await fetch(`http://localhost:5000/api/customer/delete/${customerToDelete.id}`, {
-        method: 'DELETE',
-      });
-  
+      const res = await fetch(
+        `${API_BASE}/api/customer/delete/${customerToDelete.id}`,
+        { method: "DELETE", headers: authHeaders() }
+      );
+      if (res.status === 401) {
+        navigate("/login");
+        return;
+      }
       if (res.ok) {
         setCustomers(customers.filter((c) => c.id !== customerToDelete.id));
         setShowDeleteModal(false);
@@ -288,11 +320,11 @@ export default function CustomerDashboard() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right space-x-2">
-                      <button onClick={() => navigate(`/customer/${customer.id}`)} className="text-blue-600">View</button>
-                      <button onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }} className="text-green-600">Buy</button>
-                      <button onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }} className="text-yellow-600">Edit</button>
-                      <button onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }} className="text-red-600">Delete</button>
-
+                      <button onClick={() => navigate(`/customer/${customer.id}`)} className="text-blue-600 hover:underline">View</button>
+                      <button onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }} className="text-green-600 hover:underline">Buy</button>
+                      <button onClick={() => handleCreateInvite(customer)} className="text-indigo-600 hover:underline">Invite</button>
+                      <button onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }} className="text-yellow-600 hover:underline">Edit</button>
+                      <button onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }} className="text-red-600 hover:underline">Delete</button>
                     </td>
                   </tr>
                 ))}
@@ -335,6 +367,39 @@ export default function CustomerDashboard() {
           isOpen={showBuyPopup}
           onClose={() => setShowBuyPopup(false)}
         />
+      )}
+
+      {inviteLink && inviteCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="font-semibold text-gray-900 mb-2">Invite link for {inviteCustomer.name}</h3>
+            <p className="text-sm text-gray-500 mb-2">Share this link so they can create their account and view their purchases.</p>
+            <input
+              readOnly
+              value={inviteLink}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(inviteLink);
+                  alert("Link copied to clipboard.");
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+              >
+                Copy link
+              </button>
+              <button
+                type="button"
+                onClick={() => { setInviteLink(null); setInviteCustomer(null); }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

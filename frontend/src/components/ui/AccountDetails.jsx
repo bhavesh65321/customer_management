@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import EditProductPopup from './EditProductPopup';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeftIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import EditProductPopup from "./EditProductPopup";
+import { authHeaders, API_BASE } from "../../api";
 
 
 const CustomerAccount = () => {
@@ -21,20 +22,22 @@ const CustomerAccount = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        const headers = authHeaders();
         const [customerRes, transactionsRes] = await Promise.all([
-          fetch(`http://localhost:5000/api/customer/${customerId}`),
-          fetch(`http://localhost:5000/api/transactions/${customerId}`)
+          fetch(`${API_BASE}/api/customer/${customerId}`, { headers }),
+          fetch(`${API_BASE}/api/transactions/${customerId}`, { headers }),
         ]);
-
-        if (!customerRes.ok || !transactionsRes.ok) {
-          throw new Error('Failed to fetch data');
+        if (customerRes.status === 401 || transactionsRes.status === 401) {
+          navigate("/login");
+          return;
         }
-
+        if (!customerRes.ok || !transactionsRes.ok) {
+          throw new Error("Failed to fetch data");
+        }
         const [customerData, transactionsData] = await Promise.all([
           customerRes.json(),
-          transactionsRes.json()
+          transactionsRes.json(),
         ]);
-
         setCustomer(customerData);
         setTransactions(transactionsData);
       } catch (err) {
@@ -43,9 +46,8 @@ const CustomerAccount = () => {
         setLoading(false);
       }
     };
-
     fetchData();
-  }, [customerId, transactionId]);
+  }, [customerId, transactionId, navigate]);
 
   const handleEdit = (transaction) => {
     setSelectedTransaction(transaction);
@@ -54,28 +56,27 @@ const CustomerAccount = () => {
 
   // Assuming you are using React
   const handleFullyPaid = async (transaction) => {
-    debugger;
-    console.log(transaction);
     const updatedTransaction = {
       ...transaction,
-      dueAmount: 0, 
-    paidAmount: transaction.grandTotal, 
+      dueAmount: 0,
+      paidAmount: transaction.grandTotal,
     };
-  
     try {
-      debugger;
-      const res = await fetch(`http://localhost:8000/api/transactions/${transaction.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updatedTransaction),
-      });
-  
+      const res = await fetch(
+        `${API_BASE}/api/transactions/${transaction.id}`,
+        {
+          method: "PUT",
+          headers: authHeaders(),
+          body: JSON.stringify(updatedTransaction),
+        }
+      );
+      if (res.status === 401) {
+        navigate("/login");
+        return;
+      }
       if (!res.ok) {
         throw new Error("Failed to update transaction");
       }
-  
       const data = await res.json();
       handleUpdateTransaction(data);
       setTransactionId(transaction.id); // Update your frontend state/UI
