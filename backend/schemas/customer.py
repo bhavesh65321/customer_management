@@ -16,6 +16,7 @@ class CustomerCreate(BaseModel):
 
 class CustomerResponse(BaseModel):
     id: int
+    is_active: bool = True
     name: str
     father_name: Optional[str] = None
     primary_phone: str

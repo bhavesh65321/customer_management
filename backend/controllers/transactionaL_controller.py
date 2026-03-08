@@ -6,11 +6,12 @@ from models.invoice import Invoice
 from schemas.transaction_schema import TransactionCreate, TransactionResponse, TransactionUpdate
 
 
-def create_transaction(db: Session, transaction_data: TransactionCreate):
+def create_transaction(db: Session, transaction_data: TransactionCreate, store_id: int = None):
     try:
         db_transaction = Transaction(
             customer_id=transaction_data.customerId,
             customer_name=transaction_data.customerName,
+            store_id=store_id,
             products=[p.dict() for p in transaction_data.products] if transaction_data.products else [],
             paid_amount=transaction_data.paidAmount,
             due_amount=transaction_data.dueAmount,
@@ -29,13 +30,13 @@ def create_transaction(db: Session, transaction_data: TransactionCreate):
         raise HTTPException(status_code=500, detail=str(e))
     
 
-def get_transactions(db: Session, customer_id: int = None, skip: int = 0, limit: int = 50):
+def get_transactions(db: Session, customer_id: int = None, store_id: int = None, skip: int = 0, limit: int = 50):
     try:
         query = db.query(Transaction)
-        
+        if store_id is not None:
+            query = query.filter(Transaction.store_id == store_id)
         if customer_id:
             query = query.filter(Transaction.customer_id == customer_id)
-            
         transactions = query.offset(skip).limit(limit).all()
         
         response = []

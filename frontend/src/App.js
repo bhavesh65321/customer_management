@@ -2,6 +2,8 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import CustomerDashboard from "./pages/CustomerDashboard";
 import AddCustomer from "./components/ui/AddCustomer";
 import BuyProduct from "./components/ui/BuyProduct";
@@ -15,6 +17,12 @@ import CustomerPortalDashboard from "./pages/customer-portal/CustomerPortalDashb
 import CustomerProfile from "./pages/customer-portal/CustomerProfile";
 import CustomerInvoices from "./pages/customer-portal/CustomerInvoices";
 import CustomerOrders from "./pages/customer-portal/CustomerOrders";
+import PlaceholderPage from "./pages/PlaceholderPage";
+import AdminDashboard from "./pages/AdminDashboard";
+import ShopPage from "./pages/ShopPage";
+import ChartsDashboard from "./pages/ChartsDashboard";
+import WorkersPage from "./pages/WorkersPage";
+import DailySalesPage from "./pages/DailySalesPage";
 
 function App() {
   return (
@@ -23,6 +31,8 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/customer/login" element={<CustomerPortalLogin />} />
         <Route path="/customer/join" element={<CustomerJoin />} />
         <Route path="/customer" element={<CustomerPortalLayout />}>
@@ -39,6 +49,11 @@ function App() {
         <Route path="/transactions/:customerId" element={<CustomerAccount />} />
         <Route path="/transactions" element={<EditProductPopup />} />
         <Route path="/home" element={<Home />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/charts" element={<ChartsDashboard />} />
+        <Route path="/workers" element={<WorkersPage />} />
+        <Route path="/daily-sales" element={<DailySalesPage />} />
+        <Route path="/shop" element={<ShopPage />} />
       </Routes>
     </Router>
   );

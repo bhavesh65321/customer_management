@@ -1,6 +1,7 @@
 import React from "react";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import { getToken, parseJwt } from "../../api";
+import BackButton from "../../components/ui/BackButton";
 
 export default function CustomerPortalLayout() {
   const navigate = useNavigate();
@@ -22,7 +23,9 @@ export default function CustomerPortalLayout() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <nav className="flex gap-4" aria-label="Main">
+          <div className="flex items-center gap-4">
+            <BackButton label="Back" />
+            <nav className="flex gap-4" aria-label="Main">
             <NavLink
               to="/customer/dashboard"
               className={({ isActive }) =>
@@ -56,6 +59,7 @@ export default function CustomerPortalLayout() {
               My purchases
             </NavLink>
           </nav>
+          </div>
           <button
             type="button"
             onClick={handleLogout}

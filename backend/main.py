@@ -10,6 +10,9 @@ from routes.stores import router as stores_router
 from routes.metal_rates import router as metal_rates_router
 from routes.inventory import router as inventory_router
 from routes.customer_portal import router as customer_portal_router
+from routes.admin import router as admin_router
+from routes.analytics import router as analytics_router
+from routes.workers import router as workers_router
 
 import models  # noqa: F401 - register all model tables before create_all
 
@@ -21,7 +24,7 @@ app = FastAPI()
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],  # Allow frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,5 +46,8 @@ app.include_router(transaction_routes, prefix="/api/transactions")
 app.include_router(stores_router, prefix="/api/stores")
 app.include_router(metal_rates_router, prefix="/api/metal-rates")
 app.include_router(inventory_router, prefix="/api/inventory")
+app.include_router(admin_router, prefix="/api/admin")
+app.include_router(analytics_router, prefix="/api/analytics")
+app.include_router(workers_router, prefix="/api/workers")
 app.include_router(customer_portal_router)
 

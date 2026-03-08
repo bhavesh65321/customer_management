@@ -14,6 +14,7 @@ export default function AuthForm({
   footerText,
   footerLinkText,
   footerLinkTo,
+  extraFooter,
   backgroundColor = "bg-[#ede9fe]", // default like login
 }) {
   return (
@@ -23,17 +24,34 @@ export default function AuthForm({
         {subtitle && <p className="mb-6">{subtitle}</p>}
 
         <form onSubmit={onSubmit}>
-          {fields.map(({ name, label, type = "text" }) => (
+          {fields.map(({ name, label, type = "text", options, required = true }) => (
             <div className="mb-4" key={name}>
               <label className="block mb-1 font-medium">{label}</label>
-              <input
-                type={type}
-                name={name}
-                value={values[name] || ""}
-                onChange={onChange}
-                className={`w-full px-4 py-2 border border-gray-300 rounded-md`}
-                required
-              />
+              {type === "select" && options ? (
+                <select
+                  name={name}
+                  value={values[name] ?? ""}
+                  onChange={onChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                  required={!!required}
+                >
+                  <option value="">—</option>
+                  {options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={type}
+                  name={name}
+                  value={values[name] || ""}
+                  onChange={onChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                  required={!!required}
+                />
+              )}
             </div>
           ))}
 
@@ -52,6 +70,7 @@ export default function AuthForm({
               {footerLinkText}
             </Link>
           </p>
+          {extraFooter}
         </form>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE } from "../../api";
+import BackButton from "../../components/ui/BackButton";
 
 export default function CustomerPortalLogin() {
   const navigate = useNavigate();
@@ -11,7 +13,7 @@ export default function CustomerPortalLogin() {
     e.preventDefault();
     setError("");
     try {
-      const res = await fetch("http://localhost:5000/api/auth/login", {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -31,8 +33,12 @@ export default function CustomerPortalLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-sm p-6">
+    <div className="min-h-screen bg-gray-50 px-4 py-8">
+      <div className="max-w-md mx-auto">
+        <div className="mb-6">
+          <BackButton label="Back" />
+        </div>
+      <div className="w-full max-w-md bg-white rounded-xl shadow-sm p-6 mx-auto">
         <h1 className="text-xl font-semibold text-gray-900 mb-1">Customer login</h1>
         <p className="text-sm text-gray-500 mb-6">Sign in to view your account</p>
         <form onSubmit={handleLogin} className="space-y-4">
@@ -69,6 +75,7 @@ export default function CustomerPortalLogin() {
         <p className="mt-4 text-center text-sm text-gray-500">
           Need an account? Use the invite link sent to you.
         </p>
+      </div>
       </div>
     </div>
   );

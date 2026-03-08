@@ -7,20 +7,30 @@ from models.customer import Customer
 from models.customer_invite import CustomerInvite
 from schemas.customer import CustomerCreate, CustomerResponse
 from config.database import get_db
-from dependencies import require_staff
+from dependencies import require_staff, get_token_payload
 from typing import List, Optional
 
 
 router = APIRouter(tags=["Customers"])
 
 
+def _store_filter(q, payload):
+    store_id = payload.get("store_id")
+    if store_id is not None:
+        q = q.filter(Customer.store_id == store_id)
+    else:
+        q = q.filter(Customer.store_id.is_(None))
+    return q
+
+
 @router.post("/add", response_model=CustomerResponse, include_in_schema=True)
 def add_customer(
     customer: CustomerCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
     try:
+        store_id = payload.get("store_id")
         new_customer = Customer(
             name=customer.name,
             father_name=customer.father_name,
@@ -32,6 +42,7 @@ def add_customer(
             gender=customer.gender,
             country=customer.country,
             email=customer.email,
+            store_id=store_id,
         )
         db.add(new_customer)
         db.commit()
@@ -48,10 +59,12 @@ def update_customer(
     customer_id: int,
     updated_data: CustomerCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
     try:
-        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        q = db.query(Customer).filter(Customer.id == customer_id)
+        q = _store_filter(q, payload)
+        customer = q.first()
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found")
 
@@ -80,17 +93,26 @@ def update_customer(
 def search_customers(
     query: str = "",
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
-    customers = db.query(Customer).filter(Customer.name.ilike(f"%{query}%")).all()
-    return customers
+    q = db.query(Customer).filter(Customer.name.ilike(f"%{query}%"))
+    q = _store_filter(q, payload)
+    return q.all()
+
 
 @router.get("/all", response_model=List[CustomerResponse], include_in_schema=True)
 def get_all_customers(
+    status: Optional[str] = Query(None, description="active, inactive, or all"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
-    return db.query(Customer).all()
+    q = db.query(Customer)
+    q = _store_filter(q, payload)
+    if status == "inactive":
+        q = q.filter(Customer.is_active == False)
+    elif status != "all":
+        q = q.filter(Customer.is_active == True)
+    return q.all()
 
 
 @router.get("/list", response_model=List[CustomerResponse])
@@ -99,11 +121,11 @@ def list_customers(
     filter: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
     query = db.query(Customer)
+    query = _store_filter(query, payload)
 
-    # Search by name or phone
     if search:
         query = query.filter(
             or_(
@@ -131,9 +153,11 @@ def list_customers(
 def create_invite(
     customer_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    q = db.query(Customer).filter(Customer.id == customer_id)
+    q = _store_filter(q, payload)
+    customer = q.first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     token = secrets.token_urlsafe(32)
@@ -153,10 +177,12 @@ def create_invite(
 async def get_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
     try:
-        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        q = db.query(Customer).filter(Customer.id == customer_id)
+        q = _store_filter(q, payload)
+        customer = q.first()
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found")
         return customer
@@ -169,14 +195,16 @@ async def get_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    q = db.query(Customer).filter(Customer.id == customer_id)
+    q = _store_filter(q, payload)
+    customer = q.first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    db.delete(customer)
+    customer.is_active = False
     db.commit()
-    return {"message": "Customer deleted successfully"}
+    return {"message": "Customer marked as inactive"}
 
           
 

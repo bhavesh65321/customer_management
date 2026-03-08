@@ -10,6 +10,7 @@ from models.transaction_line import TransactionLine
 from models.invoice import Invoice
 from models.audit_log import AuditLog
 from models.rates_config import MetalRate
+from models.password_reset_token import PasswordResetToken
 
 __all__ = [
     "Customer",
@@ -22,4 +23,5 @@ __all__ = [
     "Invoice",
     "AuditLog",
     "MetalRate",
+    "PasswordResetToken",
 ]

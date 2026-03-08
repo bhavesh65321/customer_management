@@ -4,6 +4,7 @@ import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import AddCustomerDrawer from "../components/ui/AddCustomer";
 import BuyProduct from "../components/ui/BuyProduct";
+import ShopLayout from "../components/layout/ShopLayout";
 import { useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
 import { authHeaders, API_BASE } from "../api"; 
@@ -12,15 +13,13 @@ export default function CustomerDashboard() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState("active");
   const [sort, setSort] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showBuyPopup, setShowBuyPopup] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
-  const [inviteLink, setInviteLink] = useState(null);
-  const [inviteCustomer, setInviteCustomer] = useState(null);
 
   const navigate = useNavigate();
 
@@ -93,26 +92,6 @@ export default function CustomerDashboard() {
     }
   };
 
-  const handleCreateInvite = async (customer) => {
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/customer/invite/${customer.id}`,
-        { method: "POST", headers: authHeaders() }
-      );
-      if (res.status === 401) {
-        navigate("/login");
-        return;
-      }
-      const data = await res.json();
-      const fullLink = `${window.location.origin}${data.invite_link}`;
-      setInviteLink(fullLink);
-      setInviteCustomer(customer);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to create invite.");
-    }
-  };
-
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
     try {
@@ -129,10 +108,10 @@ export default function CustomerDashboard() {
         setShowDeleteModal(false);
         setCustomerToDelete(null);
       } else {
-        alert("Failed to delete customer.");
+        alert("Failed to deactivate customer.");
       }
     } catch (err) {
-      console.error("Delete error:", err);
+      console.error("Deactivate error:", err);
       alert("Something went wrong.");
     }
   };
@@ -174,41 +153,36 @@ export default function CustomerDashboard() {
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch =
       !searchTerm ||
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.primary_phone.includes(searchTerm) ||
-      customer.city.toLowerCase().includes(searchTerm.toLowerCase());
+      customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (customer.primary_phone && String(customer.primary_phone).includes(searchTerm)) ||
+      customer.city?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesFilter =
-      !filter ||
-      (filter === "paid" && customer.status === "paid") ||
-      (filter === "due" && customer.status === "due");
+    const matchesStatus =
+      filter === "all" ||
+      (filter === "active" && customer.is_active !== false) ||
+      (filter === "inactive" && customer.is_active === false);
 
-    return matchesSearch && matchesFilter;
+    return matchesSearch && matchesStatus;
   });
 
   const sortedCustomers = [...filteredCustomers].sort((a, b) => {
     if (!sort) return 0;
     switch (sort) {
       case "recent":
-        return new Date(b.createdAt) - new Date(a.createdAt);
+        return (b.id ?? 0) - (a.id ?? 0);
       case "oldest":
-        return new Date(a.createdAt) - new Date(b.createdAt);
-      case "highest":
-        return (b.total_amount || 0) - (a.total_amount || 0);
-      case "least":
-        return (a.total_amount || 0) - (b.total_amount || 0);
+        return (a.id ?? 0) - (b.id ?? 0);
       case "name":
-        return a.name.localeCompare(b.name);
+        return (a.name || "").localeCompare(b.name || "");
       default:
         return 0;
     }
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+    <ShopLayout>
+      <div className="max-w-7xl mx-auto w-full min-w-0">
+        <div className="flex flex-col gap-4 mb-4 sm:mb-6">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Customers</h1>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
@@ -237,9 +211,9 @@ export default function CustomerDashboard() {
     onChange={(e) => setFilter(e.target.value)}
     className="w-full"
     options={[
-      { label: "All Status", value: "" },
-      { label: "Paid", value: "paid" },
-      { label: "Due", value: "due" },
+      { label: "Active", value: "active" },
+      { label: "Inactive", value: "inactive" },
+      { label: "All", value: "all" },
     ]}
   />
 
@@ -286,51 +260,137 @@ export default function CustomerDashboard() {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto bg-white rounded-lg shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Contact</th>
-                  <th className="px-4 py-3 text-left">Location</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {sortedCustomers.map((customer) => (
-                  <tr key={customer.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-gray-900">{customer.name}</div>
-                      <div className="text-gray-500">{customer.father_name}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>{customer.primary_phone}</div>
-                      <div className="text-gray-500 text-xs">{customer.secondary_phone}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>{customer.city}</div>
-                      <div className="text-gray-500 text-xs">{customer.country}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        customer.status === "paid" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                      }`}>
-                        {customer.status || "N/A"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button onClick={() => navigate(`/customer/${customer.id}`)} className="text-blue-600 hover:underline">View</button>
-                      <button onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }} className="text-green-600 hover:underline">Buy</button>
-                      <button onClick={() => handleCreateInvite(customer)} className="text-indigo-600 hover:underline">Invite</button>
-                      <button onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }} className="text-yellow-600 hover:underline">Edit</button>
-                      <button onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }} className="text-red-600 hover:underline">Delete</button>
-                    </td>
+          <>
+            <div className="hidden sm:block overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-100">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Name</th>
+                    <th className="px-4 py-3 text-left">Contact</th>
+                    <th className="px-4 py-3 text-left">Location</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {sortedCustomers.map((customer) => (
+                    <tr key={customer.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900">{customer.name}</div>
+                        <div className="text-gray-500">{customer.father_name}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{customer.primary_phone}</div>
+                        <div className="text-gray-500 text-xs">{customer.secondary_phone}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{customer.city}</div>
+                        <div className="text-gray-500 text-xs">{customer.country}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          customer.is_active !== false ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"
+                        }`}>
+                          {customer.is_active !== false ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/customer/${customer.id}`)}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60"
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
+                          >
+                            Buy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
+                          >
+                            Edit
+                          </button>
+                          {customer.is_active !== false && (
+                            <button
+                              type="button"
+                              onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }}
+                              className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
+                            >
+                              Deactivate
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="sm:hidden space-y-3">
+              {sortedCustomers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="bg-white rounded-lg shadow-sm border border-gray-100 p-4"
+                >
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <div>
+                      <div className="font-semibold text-gray-900">{customer.name}</div>
+                      <div className="text-gray-500 text-sm">{customer.father_name}</div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${
+                      customer.is_active !== false ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"
+                    }`}>
+                      {customer.is_active !== false ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-600 mb-3">
+                    <div>{customer.primary_phone}</div>
+                    <div>{customer.city}, {customer.country}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/customer/${customer.id}`)}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60"
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
+                    >
+                      Buy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
+                    >
+                      Edit
+                    </button>
+                    {customer.is_active !== false && (
+                      <button
+                        type="button"
+                        onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
+                      >
+                        Deactivate
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -353,9 +413,9 @@ export default function CustomerDashboard() {
 
       <ConfirmDialog
         open={showDeleteModal}
-        title="Delete Customer"
-        content="Are you sure you want to delete this customer? This action cannot be undone."
-        confirmText="Delete"
+        title="Deactivate Customer"
+        content="Mark this customer as inactive? They will no longer appear in the active list. You can view them by filtering by Inactive."
+        confirmText="Deactivate"
         cancelText="Cancel"
         onConfirm={handleDeleteCustomer}
         onCancel={() => setShowDeleteModal(false)}
@@ -369,38 +429,6 @@ export default function CustomerDashboard() {
         />
       )}
 
-      {inviteLink && inviteCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="font-semibold text-gray-900 mb-2">Invite link for {inviteCustomer.name}</h3>
-            <p className="text-sm text-gray-500 mb-2">Share this link so they can create their account and view their purchases.</p>
-            <input
-              readOnly
-              value={inviteLink}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-4"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(inviteLink);
-                  alert("Link copied to clipboard.");
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
-              >
-                Copy link
-              </button>
-              <button
-                type="button"
-                onClick={() => { setInviteLink(null); setInviteCustomer(null); }}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </ShopLayout>
   );
 }

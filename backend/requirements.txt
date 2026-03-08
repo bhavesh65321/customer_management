@@ -1,9 +1,22 @@
+# API & server
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
+
+# Database
 sqlalchemy>=1.4.0
 pymysql>=1.0.0
+
+# Validation & config
 pydantic>=1.10.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.0
 python-dotenv>=1.0.0
 email-validator>=2.0.0
+
+# Auth (JWT, password hashing)
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.0
+
+# Invoice PDF generation
+reportlab>=4.0.0
+
+# Notifications (SMS for purchase order)
+twilio>=8.0.0

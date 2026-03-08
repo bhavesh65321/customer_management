@@ -1,7 +1,9 @@
 // File: frontend/src/pages/Login.jsx
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import AuthForm from "../components/ui/AutoForm";
+import BackButton from "../components/ui/BackButton";
+import { API_BASE, parseJwt } from "../api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -17,21 +19,28 @@ export default function Login() {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      const message = Array.isArray(data.detail)
+        ? data.detail.map((d) => d.msg).join(", ")
+        : data.detail || data.message || "Login failed";
 
-      if (!response.ok) throw new Error(data.detail || data.message || "Login failed");
+      if (!response.ok) throw new Error(message);
 
       localStorage.setItem("token", data.token);
       try {
-        const payload = JSON.parse(atob(data.token.split(".")[1]));
-        if (payload.role === "customer") {
+        const payload = parseJwt(data.token);
+        if (payload?.role === "customer") {
           navigate("/customer/dashboard");
+          return;
+        }
+        if (payload?.role === "admin") {
+          navigate("/admin");
           return;
         }
       } catch (_) {}
@@ -42,8 +51,12 @@ export default function Login() {
   };
 
   return (
-    <AuthForm
-      title="Login"
+    <div className="relative">
+      <div className="absolute top-4 left-4 z-10">
+        <BackButton label="Back" />
+      </div>
+      <AuthForm
+        title="Login"
       subtitle="Hi, Welcome back 👋"
       fields={[
         { name: "email", label: "Email", type: "email" },
@@ -57,6 +70,14 @@ export default function Login() {
       footerText="Not registered yet?"
       footerLinkText="Create an account"
       footerLinkTo="/register"
-    />
+      extraFooter={
+        <p className="text-center text-sm mt-2">
+          <Link to="/forgot-password" className="text-blue-500 hover:underline">
+            Forgot password?
+          </Link>
+        </p>
+      }
+      />
+    </div>
   );
 }

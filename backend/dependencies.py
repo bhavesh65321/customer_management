@@ -41,6 +41,15 @@ def require_staff(payload: dict = Depends(get_token_payload)) -> dict:
     return payload
 
 
+def require_admin(payload: dict = Depends(get_token_payload)) -> dict:
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return payload
+
+
 def require_customer(payload: dict = Depends(get_token_payload)) -> dict:
     if payload.get("role") != "customer":
         raise HTTPException(

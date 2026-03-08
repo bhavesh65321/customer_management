@@ -1,4 +1,4 @@
-from passlib.context import CryptContext
+import bcrypt
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional
@@ -13,16 +13,30 @@ SECRET_KEY = os.getenv("SECRET_KEY", "fallback_secret_key")  # Never hardcode!
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Password context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+BCRYPT_MAX_BYTES = 72
+
+
+def _password_bytes(password: str) -> bytes:
+    encoded = password.encode("utf-8")
+    if len(encoded) > BCRYPT_MAX_BYTES:
+        encoded = encoded[:BCRYPT_MAX_BYTES]
+    return encoded
+
 
 def hash_password(password: str) -> str:
-    """Hash a password for storing."""
-    return pwd_context.hash(password)
+    """Hash a password for storing. Bcrypt limits input to 72 bytes."""
+    return bcrypt.hashpw(
+        _password_bytes(password),
+        bcrypt.gensalt(),
+    ).decode("ascii")
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a stored password against one provided by user"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a stored password against one provided by user."""
+    return bcrypt.checkpw(
+        _password_bytes(plain_password),
+        hashed_password.encode("utf-8"),
+    )
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token"""

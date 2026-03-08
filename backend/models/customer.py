@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON
+from sqlalchemy import Column, Integer, String, Text, JSON, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from config.database import Base
 
@@ -8,6 +8,8 @@ class Customer(Base):
     __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     name = Column(String(255), nullable=False)
     father_name = Column(String(255), nullable=True)
     primary_phone = Column(String(20), nullable=False)
