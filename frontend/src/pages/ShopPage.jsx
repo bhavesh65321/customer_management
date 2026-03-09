@@ -3,29 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import ShopLayout from "../components/layout/ShopLayout";
 import { API_BASE, authHeaders } from "../api";
 import { XMarkIcon } from "@heroicons/react/24/outline";
-
-const initialProduct = {
-  productName: "",
-  metalType: "gold",
-  weight: "",
-  rate: "",
-  makingCharge: "",
-  diamondCharge: "",
-  gstPercent: "3",
-};
-
-const newCustomerFields = {
-  name: "",
-  fatherName: "",
-  phonePrimary: "",
-  phoneSecondary: "",
-  email: "",
-  address: "",
-  city: "",
-  pincode: "",
-  gender: "Male",
-  country: "India",
-};
+import CustomerSelectionStep from "../components/shop/CustomerSelectionStep";
+import {
+  INITIAL_PRODUCT,
+  calculateAllProductTotals,
+  grandTotalFromProducts,
+  getWeightUnit,
+  parseNumber,
+} from "../utils/productCalculations";
+import { CUSTOMER_FORM_INITIAL, customerFormToPayload } from "../utils/customerPayload";
+import { PageContainer, SectionCard } from "../components/ui/PageSection";
 
 export default function ShopPage() {
   const [searchParams] = useSearchParams();
@@ -34,14 +21,15 @@ export default function ShopPage() {
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState(null);
   const [customerMode, setCustomerMode] = useState("new");
-  const [newCustomer, setNewCustomer] = useState(newCustomerFields);
+  const [newCustomer, setNewCustomer] = useState({ ...CUSTOMER_FORM_INITIAL });
   const [customersList, setCustomersList] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saleSuccess, setSaleSuccess] = useState(false);
 
-  const [products, setProducts] = useState([{ ...initialProduct }]);
+  const [products, setProducts] = useState([{ ...INITIAL_PRODUCT }]);
   const [paidAmount, setPaidAmount] = useState("");
+  const [billType, setBillType] = useState("For Material");
 
   useEffect(() => {
     if (!customerIdFromUrl) return;
@@ -77,29 +65,10 @@ export default function ShopPage() {
     }
   }, [step, customerMode]);
 
-  const filteredCustomers = searchQuery
-    ? customersList.filter(
-        (c) =>
-          c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.primary_phone?.includes(searchQuery)
-      )
-    : customersList;
-
   const handleCreateCustomer = async () => {
     setLoading(true);
     try {
-      const payload = {
-        name: newCustomer.name,
-        father_name: newCustomer.fatherName,
-        primary_phone: newCustomer.phonePrimary,
-        secondary_phone: newCustomer.phoneSecondary || null,
-        address: newCustomer.address || null,
-        city: newCustomer.city || null,
-        pincode: newCustomer.pincode || null,
-        gender: newCustomer.gender,
-        country: newCustomer.country,
-        email: newCustomer.email || null,
-      };
+      const payload = customerFormToPayload(newCustomer);
       const res = await fetch(`${API_BASE}/api/customer/add`, {
         method: "POST",
         headers: authHeaders(),
@@ -119,20 +88,8 @@ export default function ShopPage() {
     }
   };
 
-  const parseNumber = (v) => parseFloat(v) || 0;
-  const calculatedProducts = products.map((p) => {
-    const weight = parseNumber(p.weight);
-    const rate = parseNumber(p.rate);
-    const makingCharge = parseNumber(p.makingCharge);
-    const diamondCharge = parseNumber(p.diamondCharge);
-    const gstPercent = parseNumber(p.gstPercent);
-    const metalValue = weight * rate;
-    const taxableAmount = metalValue + makingCharge;
-    const gstAmount = (taxableAmount * gstPercent) / 100;
-    const total = metalValue + makingCharge + diamondCharge + gstAmount;
-    return { ...p, metalValue, gstAmount, total };
-  });
-  const grandTotal = calculatedProducts.reduce((s, p) => s + p.total, 0);
+  const calculatedProducts = calculateAllProductTotals(products);
+  const grandTotal = grandTotalFromProducts(calculatedProducts);
   const dueAmount = grandTotal - parseNumber(paidAmount);
 
   const handleProductChange = (index, field, value) => {
@@ -141,11 +98,8 @@ export default function ShopPage() {
     setProducts(next);
   };
 
-  const addProduct = () => setProducts([...products, { ...initialProduct }]);
+  const addProduct = () => setProducts([...products, { ...INITIAL_PRODUCT }]);
   const removeProduct = (i) => products.length > 1 && setProducts(products.filter((_, j) => j !== i));
-
-  const getWeightUnit = (metalType) =>
-    metalType === "silver" ? "kg" : metalType === "diamond" ? "pieces" : "g";
 
   const handleSaleSubmit = async () => {
     if (!customer?.id) return;
@@ -162,6 +116,7 @@ export default function ShopPage() {
           dueAmount: Math.max(dueAmount, 0),
           grandTotal,
           date: new Date().toISOString(),
+          billType: billType || "For Material",
         }),
       });
       if (!res.ok) throw new Error("Failed to save transaction");
@@ -179,106 +134,38 @@ export default function ShopPage() {
     setStep(1);
     setCustomer(null);
     setSaleSuccess(false);
-    setNewCustomer(newCustomerFields);
+    setNewCustomer({ ...CUSTOMER_FORM_INITIAL });
   };
 
   const resetToSale = () => {
     setSaleSuccess(false);
-    setProducts([{ ...initialProduct }]);
+    setProducts([{ ...INITIAL_PRODUCT }]);
     setPaidAmount("");
   };
 
   return (
     <ShopLayout>
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Shop</h1>
-
+      <PageContainer title="Shop" maxWidth="max-w-4xl">
         {step === 1 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Select or add customer</h2>
-            <div className="flex gap-4 mb-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={customerMode === "new"}
-                  onChange={() => setCustomerMode("new")}
-                />
-                <span>New customer</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={customerMode === "existing"}
-                  onChange={() => setCustomerMode("existing")}
-                />
-                <span>Existing customer</span>
-              </label>
-            </div>
-
-            {customerMode === "new" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                {Object.keys(newCustomerFields).map((key) => (
-                  <div key={key}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {key.replace(/([A-Z])/g, " $1").trim()}
-                    </label>
-                    <input
-                      type={key === "email" ? "email" : "text"}
-                      value={newCustomer[key]}
-                      onChange={(e) => setNewCustomer((prev) => ({ ...prev, [key]: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    />
-                  </div>
-                ))}
-                <div className="md:col-span-2">
-                  <button
-                    type="button"
-                    onClick={handleCreateCustomer}
-                    disabled={loading || !newCustomer.name || !newCustomer.phonePrimary}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {loading ? "Creating…" : "Create customer & continue to sale"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {customerMode === "existing" && (
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search by name or phone"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md mb-4"
-                />
-                <ul className="border border-gray-200 rounded-md divide-y divide-gray-100 max-h-64 overflow-y-auto">
-                  {filteredCustomers.slice(0, 50).map((c) => (
-                    <li
-                      key={c.id}
-                      className="px-4 py-3 flex justify-between items-center hover:bg-gray-50 cursor-pointer"
-                      onClick={() => {
-                        setCustomer(c);
-                        setStep(2);
-                      }}
-                    >
-                      <span className="font-medium">{c.name}</span>
-                      <span className="text-sm text-gray-500">{c.primary_phone}</span>
-                    </li>
-                  ))}
-                </ul>
-                {filteredCustomers.length === 0 && (
-                  <p className="text-gray-500 py-4">No customers found.</p>
-                )}
-              </div>
-            )}
-          </div>
+          <CustomerSelectionStep
+            customerMode={customerMode}
+            onModeChange={setCustomerMode}
+            newCustomer={newCustomer}
+            onNewCustomerChange={setNewCustomer}
+            customersList={customersList}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSelectCustomer={(c) => {
+              setCustomer(c);
+              setStep(2);
+            }}
+            onCreateCustomer={handleCreateCustomer}
+            loading={loading}
+          />
         )}
 
         {step === 2 && customer && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+          <SectionCard>
             {saleSuccess ? (
               <div className="text-center py-8">
                 <p className="text-lg font-medium text-green-700 mb-4">Transaction saved successfully.</p>
@@ -426,7 +313,20 @@ export default function ShopPage() {
                   ))}
                 </div>
 
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Bill type</label>
+                    <select
+                      value={billType}
+                      onChange={(e) => setBillType(e.target.value)}
+                      className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-md"
+                    >
+                      <option value="For Material">For Material</option>
+                      <option value="Cash Exchange">Cash Exchange</option>
+                      <option value="Upload Bill Photo">Upload Bill Photo</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <span className="text-sm text-gray-600">Grand total</span>
                     <div className="font-bold text-gray-900">₹{grandTotal.toFixed(2)}</div>
@@ -446,6 +346,7 @@ export default function ShopPage() {
                     <div className={`font-bold ${dueAmount > 0 ? "text-red-600" : "text-green-600"}`}>
                       ₹{Math.max(dueAmount, 0).toFixed(2)}
                     </div>
+                  </div>
                   </div>
                 </div>
                 <div className="mt-6 flex gap-3">
@@ -467,9 +368,9 @@ export default function ShopPage() {
                 </div>
               </>
             )}
-          </div>
+          </SectionCard>
         )}
-      </div>
+      </PageContainer>
     </ShopLayout>
   );
 }

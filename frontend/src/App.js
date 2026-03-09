@@ -5,7 +5,7 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import CustomerDashboard from "./pages/CustomerDashboard";
-import AddCustomer from "./components/ui/AddCustomer";
+import AddCustomerPage from "./pages/AddCustomerPage";
 import BuyProduct from "./components/ui/BuyProduct";
 import CustomerAccount from "./components/ui/AccountDetails";
 import EditProductPopup from "./components/ui/EditProductPopup";
@@ -23,6 +23,10 @@ import ShopPage from "./pages/ShopPage";
 import ChartsDashboard from "./pages/ChartsDashboard";
 import WorkersPage from "./pages/WorkersPage";
 import DailySalesPage from "./pages/DailySalesPage";
+import PaymentsPage from "./pages/PaymentsPage";
+import ImportCustomersPage from "./pages/ImportCustomersPage";
+import UploadBillPage from "./pages/UploadBillPage";
+import RemindersPage from "./pages/RemindersPage";
 
 function App() {
   return (
@@ -43,7 +47,7 @@ function App() {
           <Route path="orders" element={<CustomerOrders />} />
         </Route>
         <Route path="/customerDashboard" element={<CustomerDashboard />} />
-        <Route path="/addCustomer" element={<AddCustomer />} />
+        <Route path="/addCustomer" element={<AddCustomerPage />} />
         <Route path="/buyProduct" element={<BuyProduct />} />
         <Route path="/customer/:customerId" element={<CustomerAccount />} />
         <Route path="/transactions/:customerId" element={<CustomerAccount />} />
@@ -53,6 +57,10 @@ function App() {
         <Route path="/charts" element={<ChartsDashboard />} />
         <Route path="/workers" element={<WorkersPage />} />
         <Route path="/daily-sales" element={<DailySalesPage />} />
+        <Route path="/payments" element={<PaymentsPage />} />
+        <Route path="/import-customers" element={<ImportCustomersPage />} />
+        <Route path="/upload-bill" element={<UploadBillPage />} />
+        <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/shop" element={<ShopPage />} />
       </Routes>
     </Router>

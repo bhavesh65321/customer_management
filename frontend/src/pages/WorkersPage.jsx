@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ShopLayout from "../components/layout/ShopLayout";
 import { API_BASE, authHeaders } from "../api";
+import { formatDate, formatPay } from "../utils/format";
 
 const emptyWorkerForm = {
   name: "",
@@ -12,18 +13,6 @@ const emptyWorkerForm = {
   monthly_pay: "",
   join_date: "",
 };
-
-function formatDate(value) {
-  if (!value) return "—";
-  const d = typeof value === "string" ? value : value?.split?.("T")?.[0] ?? "";
-  return d || "—";
-}
-
-function formatPay(value) {
-  if (value == null || value === "") return "—";
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—";
-}
 
 export default function WorkersPage() {
   const [workers, setWorkers] = useState([]);

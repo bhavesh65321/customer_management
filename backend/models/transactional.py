@@ -17,8 +17,11 @@ class Transaction(Base):
     grand_total = Column(Float, default=0)
     date = Column(DateTime, default=datetime.utcnow)
     payment_mode = Column(String(50), nullable=True)
+    bill_type = Column(String(50), nullable=True)
+    bill_photo_url = Column(String(500), nullable=True)
 
     customer = relationship("Customer", back_populates="transactions")
     store = relationship("Store", back_populates="transactions")
     transaction_lines = relationship("TransactionLine", back_populates="transaction")
     invoice = relationship("Invoice", back_populates="transaction", uselist=False)
+    payments = relationship("Payment", back_populates="transaction")

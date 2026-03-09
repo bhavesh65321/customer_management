@@ -13,6 +13,8 @@ from routes.customer_portal import router as customer_portal_router
 from routes.admin import router as admin_router
 from routes.analytics import router as analytics_router
 from routes.workers import router as workers_router
+from routes.payments import router as payments_router
+from routes.reminders import router as reminders_router
 
 import models  # noqa: F401 - register all model tables before create_all
 
@@ -49,5 +51,7 @@ app.include_router(inventory_router, prefix="/api/inventory")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(analytics_router, prefix="/api/analytics")
 app.include_router(workers_router, prefix="/api/workers")
+app.include_router(payments_router, prefix="/api/payments")
+app.include_router(reminders_router, prefix="/api/reminders")
 app.include_router(customer_portal_router)
 

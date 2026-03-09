@@ -3,15 +3,17 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from config.database import get_db
 from dependencies import require_staff
-from controllers.transactionaL_controller import create_transaction, get_transactions, update_transaction
+from controllers.transaction_controller import create_transaction, get_transactions, update_transaction
 from schemas.transaction_schema import TransactionCreate, TransactionResponse, TransactionUpdate
 from models.transactional import Transaction
 from models.invoice import Invoice
+from models.payment import Payment
 from models.store import Store
 from models.customer import Customer
+from pydantic import BaseModel
 from utils.pdf_invoice import build_purchase_order_pdf
 from services.notification import send_purchase_order_notifications
-from typing import List
+from typing import List, Optional
 
 router = APIRouter(tags=["Transactions"])
 
@@ -141,6 +143,49 @@ def update_transactions(
     if store_id is None and t.store_id is not None:
         raise HTTPException(status_code=403, detail="Not authorized to update this transaction")
     return update_transaction(db, transaction_id, transaction)
+
+
+class RecordPaymentBody(BaseModel):
+    amount: float
+    payment_mode: Optional[str] = None
+
+
+@router.post("/{transaction_id}/record-payment")
+def record_payment(
+    transaction_id: int,
+    body: RecordPaymentBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_staff),
+):
+    t = _get_transaction_for_staff(transaction_id, db, payload)
+    due = float(t.due_amount or 0)
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+    if body.amount > due:
+        raise HTTPException(status_code=400, detail=f"Amount cannot exceed due amount (₹{due:.2f})")
+    paid_before = float(t.paid_amount or 0)
+    t.paid_amount = paid_before + body.amount
+    t.due_amount = due - body.amount
+    if body.payment_mode:
+        t.payment_mode = body.payment_mode
+    store_id = payload.get("store_id")
+    payment_row = Payment(
+        transaction_id=t.id,
+        store_id=store_id,
+        amount=body.amount,
+        payment_mode=body.payment_mode,
+    )
+    db.add(payment_row)
+    db.commit()
+    db.refresh(t)
+    db.refresh(payment_row)
+    return {
+        "message": "Payment recorded",
+        "transactionId": t.id,
+        "paymentId": payment_row.id,
+        "paidAmount": t.paid_amount,
+        "dueAmount": t.due_amount,
+    }
 
 
 # @router.put("/transactions/{transaction_id}/fullypaid")

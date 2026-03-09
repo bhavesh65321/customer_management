@@ -8,6 +8,7 @@ from models.transactional import Transaction
 from models.inventory_piece import InventoryPiece
 from models.transaction_line import TransactionLine
 from models.invoice import Invoice
+from models.payment import Payment
 from models.audit_log import AuditLog
 from models.rates_config import MetalRate
 from models.password_reset_token import PasswordResetToken
@@ -21,6 +22,7 @@ __all__ = [
     "InventoryPiece",
     "TransactionLine",
     "Invoice",
+    "Payment",
     "AuditLog",
     "MetalRate",
     "PasswordResetToken",

@@ -21,3 +21,4 @@ class Store(Base):
     transactions = relationship("Transaction", back_populates="store")
     inventory_pieces = relationship("InventoryPiece", back_populates="store")
     users = relationship("User", back_populates="store")
+    payments = relationship("Payment", back_populates="store")

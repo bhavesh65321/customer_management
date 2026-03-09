@@ -1,22 +1,14 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, extract
 
 from config.database import get_db
 from dependencies import require_staff
+from core.db_filters import apply_store_filter
 from models.transactional import Transaction
 
 router = APIRouter(tags=["Analytics"])
-
-
-def _analytics_store_filter(q, payload):
-    store_id = payload.get("store_id")
-    if store_id is not None:
-        q = q.filter(Transaction.store_id == store_id)
-    else:
-        q = q.filter(Transaction.store_id.is_(None))
-    return q
 
 
 @router.get("/summary")
@@ -27,7 +19,7 @@ def get_summary(
     payload: dict = Depends(require_staff),
 ):
     q = db.query(Transaction)
-    q = _analytics_store_filter(q, payload)
+    q = apply_store_filter(q, Transaction, payload)
     if from_date:
         try:
             start = datetime.strptime(from_date, "%Y-%m-%d")
@@ -64,7 +56,7 @@ def get_daily(
         func.count(Transaction.id).label("count"),
         func.coalesce(func.sum(Transaction.grand_total), 0).label("total"),
     )
-    q = _analytics_store_filter(q, payload)
+    q = apply_store_filter(q, Transaction, payload)
     if from_date:
         try:
             start = datetime.strptime(from_date, "%Y-%m-%d")
@@ -85,6 +77,53 @@ def get_daily(
     ]
 
 
+@router.get("/monthly")
+def get_monthly(
+    year: int = Query(None, description="Filter by year e.g. 2024"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_staff),
+):
+    q = db.query(
+        extract("year", Transaction.date).label("year"),
+        extract("month", Transaction.date).label("month"),
+        func.count(Transaction.id).label("count"),
+        func.coalesce(func.sum(Transaction.grand_total), 0).label("total"),
+    )
+    q = apply_store_filter(q, Transaction, payload)
+    if year is not None:
+        q = q.filter(extract("year", Transaction.date) == year)
+    q = q.group_by(extract("year", Transaction.date), extract("month", Transaction.date))
+    rows = q.all()
+    return [
+        {
+            "year": int(r.year),
+            "month": int(r.month),
+            "count": r.count,
+            "total": round(float(r.total), 2),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/yearly")
+def get_yearly(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_staff),
+):
+    q = db.query(
+        extract("year", Transaction.date).label("year"),
+        func.count(Transaction.id).label("count"),
+        func.coalesce(func.sum(Transaction.grand_total), 0).label("total"),
+    )
+    q = apply_store_filter(q, Transaction, payload)
+    q = q.group_by(extract("year", Transaction.date))
+    rows = q.all()
+    return [
+        {"year": int(r.year), "count": r.count, "total": round(float(r.total), 2)}
+        for r in rows
+    ]
+
+
 @router.get("/daily-sales")
 def get_daily_sales(
     date: str = Query(..., description="YYYY-MM-DD"),
@@ -100,7 +139,7 @@ def get_daily_sales(
         Transaction.date >= day_start,
         Transaction.date < day_end,
     )
-    q = _analytics_store_filter(q, payload)
+    q = apply_store_filter(q, Transaction, payload)
     txns = q.order_by(Transaction.date.desc()).all()
     return [
         {
@@ -113,4 +152,35 @@ def get_daily_sales(
             "date": t.date.isoformat() if t.date else None,
         }
         for t in txns
+    ]
+
+
+@router.get("/customer-analytics")
+def get_customer_analytics(
+    limit: int = Query(20, le=100),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_staff),
+):
+    store_id = payload.get("store_id")
+    q = (
+        db.query(
+            Transaction.customer_id,
+            Transaction.customer_name,
+            func.count(Transaction.id).label("transaction_count"),
+            func.coalesce(func.sum(Transaction.grand_total), 0).label("total_spent"),
+            func.coalesce(func.sum(Transaction.due_amount), 0).label("total_due"),
+        )
+        .group_by(Transaction.customer_id, Transaction.customer_name)
+    )
+    q = apply_store_filter(q, Transaction, payload)
+    rows = q.order_by(func.sum(Transaction.grand_total).desc()).limit(limit).all()
+    return [
+        {
+            "customerId": r.customer_id,
+            "customerName": r.customer_name,
+            "transactionCount": r.transaction_count,
+            "totalSpent": round(float(r.total_spent), 2),
+            "totalDue": round(float(r.total_due), 2),
+        }
+        for r in rows
     ]

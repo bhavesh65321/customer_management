@@ -1,5 +1,5 @@
 from pydantic import BaseModel, validator
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 class Product(BaseModel):
@@ -29,6 +29,8 @@ class TransactionCreate(BaseModel):
     dueAmount: float
     grandTotal: float
     date: datetime
+    billType: Optional[str] = None
+    billPhotoUrl: Optional[str] = None
 
 
 class TransactionResponse(BaseModel):
@@ -40,6 +42,8 @@ class TransactionResponse(BaseModel):
     dueAmount: float
     grandTotal: float
     date: datetime
+    billType: Optional[str] = None
+    billPhotoUrl: Optional[str] = None
 
     class Config:
         from_attributes = True

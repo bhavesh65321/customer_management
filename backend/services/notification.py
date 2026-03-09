@@ -126,3 +126,55 @@ def send_purchase_order_notifications(
             transaction_id=transaction_id,
             grand_total=grand_total,
         )
+
+
+def send_payment_reminder_email(to_email: str, customer_name: str, total_due: float, bill_count: int) -> bool:
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD")
+    from_email = os.getenv("FROM_EMAIL") or user
+    if not host or not user or not password or not to_email or "@" not in to_email:
+        return False
+    subject = f"Payment reminder - outstanding balance ₹{total_due:.2f}"
+    body_plain = f"""
+Dear {customer_name},
+
+This is a friendly reminder that you have an outstanding balance of ₹{total_due:.2f} across {bill_count} bill(s).
+
+Please clear the dues at your earliest convenience.
+
+Thank you.
+"""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
+        msg.attach(MIMEText(body_plain.strip(), "plain"))
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(from_email, to_email, msg.as_string())
+        return True
+    except Exception:
+        return False
+
+
+def send_payment_reminder_sms(phone: str, customer_name: str, total_due: float) -> bool:
+    sid = os.getenv("TWILIO_ACCOUNT_SID")
+    token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_FROM_NUMBER")
+    if not sid or not token or not from_number or not phone or not phone.strip():
+        return False
+    message = f"Hi {customer_name}, your outstanding balance is ₹{total_due:.2f}. Please clear at your earliest."
+    try:
+        from twilio.rest import Client
+        client = Client(sid, token)
+        to_number = phone.strip()
+        if not to_number.startswith("+"):
+            to_number = "+91" + to_number.lstrip("0")
+        client.messages.create(body=message, from_=from_number, to=to_number)
+        return True
+    except Exception:
+        return False

@@ -85,10 +85,12 @@ export default function CustomerDashboard() {
       } else {
         const d = await res.json().catch(() => ({}));
         alert(d.detail || "Failed to save customer");
+        throw new Error(d.detail || "Failed");
       }
     } catch (err) {
       console.error(err);
-      alert("Something went wrong.");
+      alert(err.message || "Something went wrong.");
+      throw err;
     }
   };
 

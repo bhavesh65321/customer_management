@@ -12,7 +12,7 @@ import {
   ChevronRightIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
-import { SHOP_MENU } from "../../constants/shopMenu";
+import { SHOP_MENU_SECTIONS } from "../../constants/shopMenu";
 import { getToken, parseJwt, API_BASE, authHeaders } from "../../api";
 
 export default function ShopLayout({ children }) {
@@ -51,10 +51,6 @@ export default function ShopLayout({ children }) {
 
   const displayName = companyName ?? (isAdmin ? "Admin" : shopName);
   const isCompanyUser = companyName != null;
-
-  const menu = isAdmin
-    ? [...SHOP_MENU, { name: "Admin", icon: ShieldCheckIcon, to: "/admin" }]
-    : SHOP_MENU;
 
   const SidebarContent = ({ onClickLink, collapsed }) => (
     <div className="h-full flex flex-col bg-white flex-1 min-h-0">
@@ -120,21 +116,52 @@ export default function ShopLayout({ children }) {
           </div>
         )}
       </div>
-      <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-        {menu.map((item) => (
-          <Link
-            key={item.name}
-            to={item.to}
-            onClick={onClickLink}
-            className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
-              collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
-            }`}
-            title={collapsed ? item.name : undefined}
-          >
-            <item.icon className="h-6 w-6 text-blue-600 shrink-0" />
-            {!collapsed && <span className="font-medium text-gray-700">{item.name}</span>}
-          </Link>
+      <nav className="flex-1 overflow-y-auto p-3 space-y-4">
+        {SHOP_MENU_SECTIONS.map((section) => (
+          <div key={section.label}>
+            {!collapsed && (
+              <p className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {section.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => (
+                <Link
+                  key={item.to + item.name}
+                  to={item.to}
+                  onClick={onClickLink}
+                  className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
+                    collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
+                  }`}
+                  title={collapsed ? item.name : undefined}
+                >
+                  <item.icon className="h-6 w-6 text-blue-600 shrink-0" />
+                  {!collapsed && <span className="font-medium text-gray-700">{item.name}</span>}
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
+        {isAdmin && (
+          <>
+            {!collapsed && (
+              <p className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Admin
+              </p>
+            )}
+            <Link
+              to="/admin"
+              onClick={onClickLink}
+              className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
+                collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
+              }`}
+              title={collapsed ? "Admin" : undefined}
+            >
+              <ShieldCheckIcon className="h-6 w-6 text-blue-600 shrink-0" />
+              {!collapsed && <span className="font-medium text-gray-700">Admin</span>}
+            </Link>
+          </>
+        )}
       </nav>
     </div>
   );

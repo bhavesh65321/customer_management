@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 import secrets
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from models.customer import Customer
@@ -51,7 +51,90 @@ def add_customer(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
+def _cell_value(cell):
+    if cell is None:
+        return None
+    v = cell.value
+    if v is None:
+        return None
+    return str(v).strip() if isinstance(v, str) else v
+
+
+@router.post("/import")
+def import_customers_excel(
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_staff),
+):
+    if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Upload an Excel file (.xlsx)")
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Excel support not installed (openpyxl)")
+    store_id = payload.get("store_id")
+    try:
+        wb = load_workbook(filename=file.file, read_only=True, data_only=True)
+        sheet = wb.active
+        rows = list(sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 2000)))
+        wb.close()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
+    if not rows:
+        return {"imported": 0, "errors": ["Sheet is empty."]}
+    header = [_cell_value(c) for c in rows[0]]
+    col_index = {}
+    for i, h in enumerate(header):
+        if h:
+            key = str(h).lower().replace(" ", "_")
+            if key not in col_index:
+                col_index[key] = i
+    name_col = col_index.get("name") if "name" in col_index else None
+    phone_col = col_index.get("phone") or col_index.get("primary_phone") or col_index.get("mobile")
+    if name_col is None or phone_col is None:
+        return {
+            "imported": 0,
+            "errors": ["Excel must have columns 'Name' and 'Phone' (or 'Primary Phone' / 'Mobile')."],
+        }
+    email_col = col_index.get("email")
+    address_col = col_index.get("address")
+    imported = 0
+    errors = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        cells = [_cell_value(c) for c in row]
+        name = cells[name_col] if name_col < len(cells) else None
+        phone = cells[phone_col] if phone_col < len(cells) else None
+        if not name or not str(name).strip():
+            errors.append(f"Row {row_idx}: Name is required")
+            continue
+        if not phone or not str(phone).strip():
+            errors.append(f"Row {row_idx}: Phone is required")
+            continue
+        name = str(name).strip()
+        phone = str(phone).strip()
+        email = cells[email_col] if email_col is not None and email_col < len(cells) and cells[email_col] else None
+        if email:
+            email = str(email).strip()
+        address = cells[address_col] if address_col is not None and address_col < len(cells) and cells[address_col] else None
+        if address:
+            address = str(address).strip()
+        try:
+            new_customer = Customer(
+                name=name,
+                primary_phone=phone,
+                email=email or None,
+                address=address or None,
+                store_id=store_id,
+            )
+            db.add(new_customer)
+            db.commit()
+            imported += 1
+        except Exception as e:
+            db.rollback()
+            errors.append(f"Row {row_idx}: {str(e)}")
+    return {"imported": imported, "errors": errors[:50]}
 
 
 @router.put("/update/{customer_id}", response_model=CustomerResponse, include_in_schema=True)

@@ -3,12 +3,7 @@ import { Link } from "react-router-dom";
 import ShopLayout from "../components/layout/ShopLayout";
 import { SHOP_MENU } from "../constants/shopMenu";
 import { API_BASE, authHeaders, getToken, parseJwt } from "../api";
-
-function formatDate(val) {
-  if (!val) return null;
-  const d = typeof val === "string" ? val.split("T")[0] : val;
-  return d || null;
-}
+import { formatDate } from "../utils/format";
 
 export default function Home() {
   const [company, setCompany] = useState(null);
@@ -52,7 +47,7 @@ export default function Home() {
                 <p className="font-medium text-gray-900 capitalize">{company.license_type}</p>
               </div>
             )}
-            {formatDate(company.join_date) && (
+            {formatDate(company.join_date, null) && (
               <div>
                 <span className="text-gray-500">Joining date</span>
                 <p className="font-medium text-gray-900">{formatDate(company.join_date)}</p>

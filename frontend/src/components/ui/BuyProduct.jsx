@@ -18,10 +18,13 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
   const [products, setProducts] = useState([{...initialProduct}]);
   const [paidAmount, setPaidAmount] = useState("");
   const [customerId, setCustomerId] = useState("");
+  const [billType, setBillType] = useState("For Material");
 
   useEffect(() => {
     if (customer?.id) {
-      setCustomerId(customer.id);
+      setCustomerId(String(customer.id));
+    } else {
+      setCustomerId("");
     }
   }, [customer]);
 
@@ -63,14 +66,20 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
   };
 
   const handleSubmit = () => {
+    const cid = parseInt(customerId, 10);
+    if (!cid || !(customer?.name ?? "").trim()) {
+      alert("Please select a customer. Go to Customers and open a customer, then click Buy / Create Bill.");
+      return;
+    }
     const transactionData = {
-      customerId,
-      customerName: customer.name,
+      customerId: cid,
+      customerName: (customer?.name ?? "").trim(),
       products: calculatedProducts,
       paidAmount: parseNumber(paidAmount),
       dueAmount: Math.max(dueAmount, 0),
       grandTotal,
       date: new Date().toISOString(),
+      billType: billType || "For Material",
     };
     console.log(transactionData);
     console.log(JSON.stringify(transactionData))
@@ -128,7 +137,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
               <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
                 <div className="flex justify-between items-center mb-4">
                   <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
-                    New Purchase for {customer.name}
+                    New Purchase {customer?.name ? `for ${customer.name}` : ""}
                   </Dialog.Title>
                   <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
                     <XMarkIcon className="h-6 w-6" />
@@ -307,6 +316,18 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
                 {/* Payment Summary */}
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-700 mb-3">Payment Summary</h4>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Bill type</label>
+                    <select
+                      value={billType}
+                      onChange={(e) => setBillType(e.target.value)}
+                      className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="For Material">For Material</option>
+                      <option value="Cash Exchange">Cash Exchange</option>
+                      <option value="Upload Bill Photo">Upload Bill Photo</option>
+                    </select>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">

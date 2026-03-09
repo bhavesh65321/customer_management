@@ -3,12 +3,7 @@ import { useNavigate } from "react-router-dom";
 import BackButton from "../components/ui/BackButton";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
 import { API_BASE, authHeaders, getToken, parseJwt } from "../api";
-
-function formatDate(val) {
-  if (!val) return "—";
-  const d = typeof val === "string" ? val.split("T")[0] : val;
-  return d || "—";
-}
+import { formatDate } from "../utils/format";
 
 const emptyForm = {
   name: "",

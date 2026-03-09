@@ -51,9 +51,12 @@ export default function AddCustomerDrawer({ isOpen, onClose, onAdd, initialData 
   };
 
   const handleSubmit = () => {
-    onAdd(formData); // Send form data to parent (either for add or update)
-    onClose();
-    // formData reset handled by useEffect when drawer closes
+    const result = onAdd(formData);
+    if (result && typeof result.then === "function") {
+      result.then(() => onClose()).catch(() => {});
+    } else {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
