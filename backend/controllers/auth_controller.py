@@ -55,8 +55,18 @@ def resolve_store_from_identifier(identifier: str, db: Session):
     return None
 
 
+def _validate_password_strength(password: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not any(c.isalpha() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one letter")
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one number")
+
+
 def register_user(name: str, email: str, password: str, db: Session, store_id: int = None, company_identifier: str = None):
     from models.store import Store
+    _validate_password_strength(password)
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -86,6 +96,7 @@ def register_user(name: str, email: str, password: str, db: Session, store_id: i
 def customer_register_with_invite(
     token: str, email: str, password: str, db: Session
 ) -> User:
+    _validate_password_strength(password)
     invite = (
         db.query(CustomerInvite)
         .filter(
@@ -126,20 +137,18 @@ def forgot_password(email: str, db: Session):
     user = db.query(User).filter(User.email == email).first()
     if not user:
         return {"message": "If an account exists with this email, a reset link has been sent."}
-    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete(synchronize_session=False)
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(hours=1)
     reset = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
     db.add(reset)
+    db.query(PasswordResetToken).filter(PasswordResetToken.expires_at < datetime.utcnow()).delete(synchronize_session=False)
     db.commit()
-    return {
-        "message": "If an account exists with this email, a reset link has been sent.",
-        "reset_token": token,
-        "reset_link": f"/reset-password?token={token}",
-    }
+    return {"message": "If an account exists with this email, a reset link has been sent."}
 
 
 def reset_password(token: str, new_password: str, db: Session):
+    _validate_password_strength(new_password)
     row = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == token,
         PasswordResetToken.expires_at > datetime.utcnow(),

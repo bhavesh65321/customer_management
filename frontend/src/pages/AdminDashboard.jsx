@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/ui/BackButton";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
+import InlineError from "../components/ui/InlineError";
 import { API_BASE, authHeaders, getToken, parseJwt } from "../api";
 import { formatDate } from "../utils/format";
 
@@ -200,7 +201,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Add company</h2>
             <form onSubmit={handleAddSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
-              {error && <p className="text-red-600 text-sm sm:col-span-2">{error}</p>}
+              {error && <div className="sm:col-span-2"><InlineError message={error} onDismiss={() => setError("")} className="mb-2" /></div>}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Company name *</label>
                 <input

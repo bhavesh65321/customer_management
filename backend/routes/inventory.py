@@ -15,11 +15,11 @@ router = APIRouter(tags=["Inventory"])
 
 @router.get("", response_model=List[InventoryPieceResponse])
 def list_pieces(
-    store_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _auth=Depends(require_staff),
+    payload: dict = Depends(require_staff),
 ):
     q = db.query(InventoryPiece)
+    store_id = payload.get("store_id")
     if store_id is not None:
         q = q.filter(InventoryPiece.store_id == store_id)
     return q.all()

@@ -8,6 +8,17 @@ from schemas.transaction_schema import TransactionCreate, TransactionResponse, T
 
 def create_transaction(db: Session, transaction_data: TransactionCreate, store_id: int = None):
     try:
+        product_sum = sum(p.total for p in transaction_data.products) if transaction_data.products else 0
+        if abs(transaction_data.grandTotal - product_sum) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"grandTotal must equal sum of product totals (got {transaction_data.grandTotal}, sum={product_sum})",
+            )
+        if abs((transaction_data.paidAmount + transaction_data.dueAmount) - transaction_data.grandTotal) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail="paidAmount + dueAmount must equal grandTotal",
+            )
         db_transaction = Transaction(
             customer_id=transaction_data.customerId,
             customer_name=transaction_data.customerName,
@@ -75,7 +86,7 @@ def get_transactions(db: Session, customer_id: int = None, store_id: int = None,
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def update_transaction(db: Session, transaction_id: str, transaction_data: TransactionUpdate):
+def update_transaction(db: Session, transaction_id: int, transaction_data: TransactionUpdate):
     try:
         db_transaction = (
             db.query(Transaction)

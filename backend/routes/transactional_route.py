@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from config.database import get_db
@@ -10,10 +10,12 @@ from models.invoice import Invoice
 from models.payment import Payment
 from models.store import Store
 from models.customer import Customer
+from models.idempotency import PaymentIdempotency
 from pydantic import BaseModel
 from utils.pdf_invoice import build_purchase_order_pdf
 from services.notification import send_purchase_order_notifications
 from typing import List, Optional
+import json
 
 router = APIRouter(tags=["Transactions"])
 
@@ -99,6 +101,11 @@ def save_transaction(
     payload: dict = Depends(require_staff),
 ):
     store_id = payload.get("store_id")
+    customer = db.query(Customer).filter(Customer.id == transaction.customerId).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if store_id is not None and customer.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Customer does not belong to your store")
     db_transaction = create_transaction(db, transaction, store_id=store_id)
     customer = db.query(Customer).filter(Customer.id == db_transaction.customer_id).first()
     if customer:
@@ -152,11 +159,25 @@ class RecordPaymentBody(BaseModel):
 
 @router.post("/{transaction_id}/record-payment")
 def record_payment(
+    request: Request,
     transaction_id: int,
     body: RecordPaymentBody,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
+    idem_key = request.headers.get("Idempotency-Key")
+    if idem_key and len(idem_key) <= 64:
+        existing = (
+            db.query(PaymentIdempotency)
+            .filter(
+                PaymentIdempotency.idempotency_key == idem_key,
+                PaymentIdempotency.transaction_id == transaction_id,
+                PaymentIdempotency.amount == body.amount,
+            )
+            .first()
+        )
+        if existing and existing.response_snapshot:
+            return json.loads(existing.response_snapshot)
     t = _get_transaction_for_staff(transaction_id, db, payload)
     due = float(t.due_amount or 0)
     if body.amount <= 0:
@@ -179,13 +200,23 @@ def record_payment(
     db.commit()
     db.refresh(t)
     db.refresh(payment_row)
-    return {
+    response_body = {
         "message": "Payment recorded",
         "transactionId": t.id,
         "paymentId": payment_row.id,
         "paidAmount": t.paid_amount,
         "dueAmount": t.due_amount,
     }
+    if idem_key and len(idem_key) <= 64:
+        idem_row = PaymentIdempotency(
+            idempotency_key=idem_key,
+            transaction_id=t.id,
+            amount=body.amount,
+            response_snapshot=json.dumps(response_body),
+        )
+        db.add(idem_row)
+        db.commit()
+    return response_body
 
 
 # @router.put("/transactions/{transaction_id}/fullypaid")

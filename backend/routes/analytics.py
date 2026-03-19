@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 
@@ -25,13 +25,13 @@ def get_summary(
             start = datetime.strptime(from_date, "%Y-%m-%d")
             q = q.filter(Transaction.date >= start)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid from_date; use YYYY-MM-DD")
     if to_date:
         try:
             end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
             q = q.filter(Transaction.date < end)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid to_date; use YYYY-MM-DD")
     rows = q.all()
     total_amount = sum(t.grand_total or 0 for t in rows)
     total_paid = sum(t.paid_amount or 0 for t in rows)
@@ -62,13 +62,13 @@ def get_daily(
             start = datetime.strptime(from_date, "%Y-%m-%d")
             q = q.filter(Transaction.date >= start)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid from_date; use YYYY-MM-DD")
     if to_date:
         try:
             end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
             q = q.filter(Transaction.date < end)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid to_date; use YYYY-MM-DD")
     q = q.group_by(func.date(Transaction.date))
     rows = q.all()
     return [
@@ -134,7 +134,7 @@ def get_daily_sales(
         day_start = datetime.strptime(date, "%Y-%m-%d")
         day_end = day_start + timedelta(days=1)
     except ValueError:
-        return []
+        raise HTTPException(status_code=400, detail="Invalid date; use YYYY-MM-DD")
     q = db.query(Transaction).filter(
         Transaction.date >= day_start,
         Transaction.date < day_end,

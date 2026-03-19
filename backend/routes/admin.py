@@ -1,14 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 
 from config.database import get_db
 from dependencies import require_admin
 from models.user_model import User
 from models.store import Store
+from models.customer import Customer
+from models.transactional import Transaction
 from schemas.user_schema import UserOut, AdminUserCreate, AdminUserUpdate
 from schemas.store_schema import StoreResponse, StoreCreate, StoreUpdate
 from utils.auth_utils import hash_password
+from controllers.auth_controller import _validate_password_strength
 
 router = APIRouter(tags=["Admin"])
 
@@ -39,6 +43,13 @@ def create_user(
             status_code=400,
             detail="customer_id required when role is customer",
         )
+    if body.role == "customer":
+        customer = db.query(Customer).filter(Customer.id == body.customer_id).first()
+        if not customer:
+            raise HTTPException(status_code=400, detail="Customer not found")
+        if db.query(User).filter(User.customer_id == body.customer_id).first():
+            raise HTTPException(status_code=400, detail="This customer already has an account")
+    _validate_password_strength(body.password)
     new_user = User(
         name=body.name,
         email=body.email,
@@ -96,6 +107,10 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "admin":
+        admin_count = db.query(User).filter(User.role == "admin").count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin")
     from models.audit_log import AuditLog
     db.query(AuditLog).filter(AuditLog.user_id == user_id).update({AuditLog.user_id: None})
     db.delete(user)
@@ -117,6 +132,14 @@ def create_store_admin(
     db: Session = Depends(get_db),
     _auth=Depends(require_admin),
 ):
+    name_stripped = (body.name or "").strip()
+    if name_stripped and db.query(Store).filter(func.lower(Store.name) == name_stripped.lower()).first():
+        raise HTTPException(status_code=400, detail="A store with this name already exists")
+    phone_stripped = (body.contact_phone or "").strip()
+    if phone_stripped:
+        existing_phone = db.query(Store).filter(Store.contact_phone == phone_stripped).first()
+        if existing_phone:
+            raise HTTPException(status_code=400, detail="A store with this contact phone already exists")
     store = Store(
         name=body.name,
         gstin=body.gstin,
@@ -165,6 +188,21 @@ def delete_store_admin(
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+    if db.query(Transaction).filter(Transaction.store_id == store_id).limit(1).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Store has transactions; delete or reassign them first",
+        )
+    if db.query(Customer).filter(Customer.store_id == store_id).limit(1).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Store has customers; delete or reassign them first",
+        )
+    if db.query(User).filter(User.store_id == store_id).limit(1).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Store has users; reassign or remove them first",
+        )
     db.delete(store)
     db.commit()
     return None

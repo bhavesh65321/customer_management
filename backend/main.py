@@ -15,6 +15,10 @@ from routes.analytics import router as analytics_router
 from routes.workers import router as workers_router
 from routes.payments import router as payments_router
 from routes.reminders import router as reminders_router
+from routes.girvi import router as girvi_router
+from routes.metal_exchange import router as metal_exchange_router
+from routes.orders import router as orders_router
+from routes.stock import router as stock_router
 
 import models  # noqa: F401 - register all model tables before create_all
 
@@ -53,5 +57,9 @@ app.include_router(analytics_router, prefix="/api/analytics")
 app.include_router(workers_router, prefix="/api/workers")
 app.include_router(payments_router, prefix="/api/payments")
 app.include_router(reminders_router, prefix="/api/reminders")
+app.include_router(girvi_router, prefix="/api/girvi")
+app.include_router(metal_exchange_router, prefix="/api/metal-exchange")
+app.include_router(orders_router, prefix="/api/orders")
+app.include_router(stock_router, prefix="/api/stock")
 app.include_router(customer_portal_router)
 

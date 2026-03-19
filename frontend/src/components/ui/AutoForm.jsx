@@ -1,6 +1,6 @@
-// File: frontend/src/components/AuthForm.jsx
 import React from "react";
 import { Link } from "react-router-dom";
+import InlineError from "./InlineError";
 
 export default function AuthForm({
   title,
@@ -55,7 +55,7 @@ export default function AuthForm({
             </div>
           ))}
 
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+          {error && <InlineError message={error} className="mb-4" />}
 
           <button
             type="submit"

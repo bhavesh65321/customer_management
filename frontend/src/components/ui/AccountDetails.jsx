@@ -3,12 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeftIcon, ExclamationTriangleIcon, ShoppingCartIcon } from "@heroicons/react/24/outline";
 import EditProductPopup from "./EditProductPopup";
 import BackButton from "./BackButton";
+import InlineError from "./InlineError";
+import { useLanguage } from "../../context/LanguageContext";
 import { authHeaders, API_BASE } from "../../api";
 
 
 const CustomerAccount = () => {
   const { customerId } = useParams();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const [customer, setCustomer] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -22,6 +25,7 @@ const CustomerAccount = () => {
   const [invoiceTransactionId, setInvoiceTransactionId] = useState(null);
   const [invoiceData, setInvoiceData] = useState(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -120,12 +124,13 @@ const CustomerAccount = () => {
     setShowInvoiceModal(false);
     setInvoiceTransactionId(null);
     setInvoiceData(null);
+    setInvoiceError("");
   };
 
   const handlePrintInvoice = () => {
     if (!invoiceData?.transaction) return;
-    const t = invoiceData.transaction;
-    const products = t.products || [];
+    const txn = invoiceData.transaction;
+    const products = txn.products || [];
     const rows = products
       .map(
         (p, i) =>
@@ -134,18 +139,18 @@ const CustomerAccount = () => {
       .join("");
     const win = window.open("", "_blank");
     win.document.write(`
-      <!DOCTYPE html><html><head><title>Purchase Order #${t.id}</title>
+      <!DOCTYPE html><html><head><title>${t("customer.purchaseOrder")} #${txn.id}</title>
       <style>body{font-family:sans-serif;max-width:600px;margin:24px auto;padding:16px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f5f5f5;} .text-right{text-align:right;} .mt{ margin-top:16px;}</style>
       </head><body>
-      <h2 style="text-align:center">PURCHASE ORDER</h2>
+      <h2 style="text-align:center">${t("customer.purchaseOrder").toUpperCase()}</h2>
       ${invoiceData.storeName ? `<p>${invoiceData.storeName}</p>` : ""}
-      <p><strong>Customer:</strong> ${t.customerName}</p>
-      <p><strong>Date:</strong> ${t.date ? new Date(t.date).toLocaleString() : "-"}</p>
-      <p><strong>Order No:</strong> #${t.id}</p>
-      <table><thead><tr><th>No.</th><th>Product</th><th>Weight/Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="mt"><strong>Grand Total:</strong> ₹${Number(t.grandTotal || 0).toFixed(2)}</div>
-      <div><strong>Paid:</strong> ₹${Number(t.paidAmount || 0).toFixed(2)}</div>
-      <div><strong>Due:</strong> ₹${Number(t.dueAmount || 0).toFixed(2)}</div>
+      <p><strong>${t("customer.customerLabel")}:</strong> ${txn.customerName}</p>
+      <p><strong>${t("customer.date")}:</strong> ${txn.date ? new Date(txn.date).toLocaleString() : "-"}</p>
+      <p><strong>${t("customer.orderNo")}:</strong> #${txn.id}</p>
+      <table><thead><tr><th>${t("customer.tableNo")}</th><th>${t("customer.invoiceProduct")}</th><th>${t("customer.tableWeightQty")}</th><th>${t("customer.tableRate")}</th><th>${t("customer.tableAmount")}</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="mt"><strong>${t("customer.grandTotal")}:</strong> ₹${Number(txn.grandTotal || 0).toFixed(2)}</div>
+      <div><strong>${t("customer.paidLabel")}:</strong> ₹${Number(txn.paidAmount || 0).toFixed(2)}</div>
+      <div><strong>${t("customer.dueLabel")}:</strong> ₹${Number(txn.dueAmount || 0).toFixed(2)}</div>
       </body></html>
     `);
     win.document.close();
@@ -171,7 +176,7 @@ const CustomerAccount = () => {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert("Failed to download PDF");
+      setInvoiceError("Failed to download PDF");
     }
   };
 
@@ -208,10 +213,10 @@ const CustomerAccount = () => {
 
   if (error) {
     return (
-      <div className="p-4 text-center text-red-500">
-        Error: {error}
+      <div className="p-4 max-w-xl mx-auto">
+        <InlineError message={error} />
         <div className="mt-4 flex justify-center">
-          <BackButton to="/customerDashboard" label="Back to Customers" />
+          <BackButton to="/customerDashboard" label={t("customer.backToCustomers")} />
         </div>
       </div>
     );
@@ -220,9 +225,9 @@ const CustomerAccount = () => {
   if (!customer) {
     return (
       <div className="p-4 text-center">
-        Customer not found
+        {t("customer.customerNotFound")}
         <div className="mt-4 flex justify-center">
-          <BackButton to="/customerDashboard" label="Back to Customers" />
+          <BackButton to="/customerDashboard" label={t("customer.backToCustomers")} />
         </div>
       </div>
     );
@@ -232,57 +237,57 @@ const CustomerAccount = () => {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <BackButton to="/customerDashboard" label="Back to Customers" />
+          <BackButton to="/customerDashboard" label={t("customer.backToCustomers")} />
           <button
             type="button"
             onClick={() => navigate(`/shop?customerId=${customerId}`)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium text-sm"
           >
             <ShoppingCartIcon className="h-5 w-5" />
-            Buy
+            {t("customer.buy")}
           </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Customer</h2>
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("customer.customerDetails")}</h2>
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <h1 className="text-xl font-bold text-gray-900">{customer.name}</h1>
               {isAtRisk && (
                 <span className="inline-flex items-center bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
                   <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
-                  High Risk
+                  {t("customer.highRisk")}
                 </span>
               )}
             </div>
             <div className="space-y-2 text-sm text-gray-700">
-              <p><span className="font-medium text-gray-500">Phone:</span> {customer.primary_phone}</p>
+              <p><span className="font-medium text-gray-500">{t("customer.phone")}:</span> {customer.primary_phone}</p>
               {customer.secondary_phone && (
-                <p><span className="font-medium text-gray-500">Alt. Phone:</span> {customer.secondary_phone}</p>
+                <p><span className="font-medium text-gray-500">{t("customer.altPhone")}:</span> {customer.secondary_phone}</p>
               )}
-              <p><span className="font-medium text-gray-500">Address:</span> {customer.address}</p>
-              <p><span className="font-medium text-gray-500">City:</span> {customer.city}, {customer.pincode}</p>
-              <p><span className="font-medium text-gray-500">Country:</span> {customer.country}</p>
+              <p><span className="font-medium text-gray-500">{t("common.address")}:</span> {customer.address}</p>
+              <p><span className="font-medium text-gray-500">{t("form.city")}:</span> {customer.city}, {customer.pincode}</p>
+              <p><span className="font-medium text-gray-500">{t("form.country")}:</span> {customer.country}</p>
             </div>
           </div>
 
           <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Account Summary</h2>
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("customer.accountSummary")}</h2>
             <div className="space-y-4">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total purchases</span>
+                <span className="text-gray-600">{t("customer.totalPurchases")}</span>
                 <span className="font-medium text-gray-900">{transactions.length}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total amount</span>
+                <span className="text-gray-600">{t("customer.totalAmount")}</span>
                 <span className="font-medium text-gray-900">₹{(totalAmount ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Amount paid</span>
+                <span className="text-gray-600">{t("customer.amountPaid")}</span>
                 <span className="font-medium text-green-600">₹{(totalPaid ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Pending amount</span>
+                <span className="text-gray-600">{t("customer.pendingAmount")}</span>
                 <span className={`font-medium ${totalDue > 0 ? "text-red-600" : "text-gray-900"}`}>
                   ₹{(totalDue ?? 0).toFixed(2)}
                 </span>
@@ -293,25 +298,25 @@ const CustomerAccount = () => {
 
         <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800">Transaction History</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Detailed view of all purchases</p>
+            <h2 className="text-lg font-semibold text-gray-800">{t("customer.transactionHistory")}</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{t("customer.detailedViewPurchases")}</p>
           </div>
 
           {transactions.length === 0 ? (
             <div className="p-12 text-center">
-              <p className="text-gray-500">No transactions yet.</p>
+              <p className="text-gray-500">{t("customer.noTransactionsYet")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No.</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Products</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableNo")}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableProducts")}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.purchaseDate")}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableAmount")}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableStatus")}</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableActions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -327,14 +332,14 @@ const CustomerAccount = () => {
                         <td className="px-6 py-4">
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              {txn.products?.[0]?.productName || "No product"}
+                              {txn.products?.[0]?.productName || t("customer.noProduct")}
                             </div>
                             <button
                               type="button"
                               className="text-xs text-blue-600 hover:underline"
                               onClick={(e) => { e.stopPropagation(); toggleTransaction(txn.id); }}
                             >
-                              View details
+                              {t("customer.viewDetails")}
                             </button>
                           </div>
                         </td>
@@ -349,14 +354,14 @@ const CustomerAccount = () => {
                             ₹{(txn.grandTotal ?? 0).toFixed(2)}
                           </div>
                           <div className={`text-xs ${txn.dueAmount > 0 ? "text-red-600" : "text-green-600"}`}>
-                            {txn.dueAmount > 0 ? `₹${(txn.dueAmount ?? 0).toFixed(2)} due` : "Fully paid"}
+                            {txn.dueAmount > 0 ? `₹${(txn.dueAmount ?? 0).toFixed(2)} ${t("customer.due")}` : t("customer.fullyPaid")}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
                             txn.dueAmount > 0 ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"
                           }`}>
-                            {txn.dueAmount > 0 ? "Pending" : "Completed"}
+                            {txn.dueAmount > 0 ? t("customer.pending") : t("customer.completed")}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -366,14 +371,14 @@ const CustomerAccount = () => {
                               onClick={() => handleOpenInvoice(txn)}
                               className="px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60"
                             >
-                              Invoice
+                              {t("customer.invoice")}
                             </button>
                             <button
                               type="button"
                               onClick={() => handleEdit(txn)}
                               className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300"
                             >
-                              Edit
+                              {t("customer.edit")}
                             </button>
                             {txn.dueAmount > 0 && (
                               <button
@@ -381,7 +386,7 @@ const CustomerAccount = () => {
                                 onClick={() => handleFullyPaid(txn)}
                                 className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
                               >
-                                Fully pay
+                                {t("customer.fullyPay")}
                               </button>
                             )}
                           </div>
@@ -455,9 +460,14 @@ const CustomerAccount = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={handleCloseInvoiceModal}>
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">Purchase Order</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{t("customer.purchaseOrder")}</h3>
               <button type="button" onClick={handleCloseInvoiceModal} className="text-gray-500 hover:text-gray-700 p-1">×</button>
             </div>
+            {invoiceError && (
+              <div className="px-6 pt-2">
+                <InlineError message={invoiceError} onDismiss={() => setInvoiceError("")} />
+              </div>
+            )}
             <div className="p-6 overflow-y-auto flex-1">
               {invoiceLoading ? (
                 <div className="flex justify-center py-8">
@@ -466,17 +476,17 @@ const CustomerAccount = () => {
               ) : invoiceData?.transaction ? (
                 <div className="space-y-4">
                   {invoiceData.storeName && <p className="text-sm text-gray-600">{invoiceData.storeName}</p>}
-                  <p className="text-sm"><span className="font-medium text-gray-500">Customer:</span> {invoiceData.transaction.customerName}</p>
-                  <p className="text-sm"><span className="font-medium text-gray-500">Date:</span> {invoiceData.transaction.date ? new Date(invoiceData.transaction.date).toLocaleString() : "-"}</p>
-                  <p className="text-sm"><span className="font-medium text-gray-500">Order No:</span> #{invoiceData.transaction.id}</p>
+                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.customerLabel")}:</span> {invoiceData.transaction.customerName}</p>
+                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.date")}:</span> {invoiceData.transaction.date ? new Date(invoiceData.transaction.date).toLocaleString() : "-"}</p>
+                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.orderNo")}</span> #{invoiceData.transaction.id}</p>
                   <table className="min-w-full text-sm border border-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left border-b">No.</th>
-                        <th className="px-3 py-2 text-left border-b">Product</th>
-                        <th className="px-3 py-2 text-left border-b">Weight</th>
-                        <th className="px-3 py-2 text-right border-b">Rate</th>
-                        <th className="px-3 py-2 text-right border-b">Amount</th>
+                        <th className="px-3 py-2 text-left border-b">{t("customer.tableNo")}</th>
+                        <th className="px-3 py-2 text-left border-b">{t("customer.invoiceProduct")}</th>
+                        <th className="px-3 py-2 text-left border-b">{t("customer.tableWeight")}</th>
+                        <th className="px-3 py-2 text-right border-b">{t("customer.tableRate")}</th>
+                        <th className="px-3 py-2 text-right border-b">{t("customer.tableAmount")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -492,19 +502,19 @@ const CustomerAccount = () => {
                     </tbody>
                   </table>
                   <div className="pt-2 space-y-1 text-sm">
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">Grand Total</span> <span>₹{Number(invoiceData.transaction.grandTotal || 0).toFixed(2)}</span></p>
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">Paid</span> <span className="text-green-600">₹{Number(invoiceData.transaction.paidAmount || 0).toFixed(2)}</span></p>
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">Due</span> <span>₹{Number(invoiceData.transaction.dueAmount || 0).toFixed(2)}</span></p>
+                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.grandTotal")}</span> <span>₹{Number(invoiceData.transaction.grandTotal || 0).toFixed(2)}</span></p>
+                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.paidAmount")}</span> <span className="text-green-600">₹{Number(invoiceData.transaction.paidAmount || 0).toFixed(2)}</span></p>
+                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.dueAmount")}</span> <span>₹{Number(invoiceData.transaction.dueAmount || 0).toFixed(2)}</span></p>
                   </div>
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-4">Could not load invoice.</p>
+                <p className="text-gray-500 text-center py-4">{t("customer.couldNotLoadInvoice")}</p>
               )}
             </div>
             {invoiceData?.transaction && (
               <div className="px-6 py-4 border-t border-gray-200 flex gap-2">
-                <button type="button" onClick={handlePrintInvoice} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Print</button>
-                <button type="button" onClick={handleDownloadInvoicePdf} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">Download PDF</button>
+                <button type="button" onClick={handlePrintInvoice} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">{t("customer.print")}</button>
+                <button type="button" onClick={handleDownloadInvoicePdf} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">{t("customer.downloadPdf")}</button>
               </div>
             )}
           </div>

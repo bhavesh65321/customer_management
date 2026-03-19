@@ -1,5 +1,6 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -27,6 +28,18 @@ import PaymentsPage from "./pages/PaymentsPage";
 import ImportCustomersPage from "./pages/ImportCustomersPage";
 import UploadBillPage from "./pages/UploadBillPage";
 import RemindersPage from "./pages/RemindersPage";
+import GirviPage from "./pages/girvi/GirviPage";
+import GirviNewPage from "./pages/girvi/GirviNewPage";
+import GirviInterestDuePage from "./pages/girvi/GirviInterestDuePage";
+import MetalExchangePage from "./pages/metal-exchange/MetalExchangePage";
+import MetalExchangeNewPage from "./pages/metal-exchange/MetalExchangeNewPage";
+import MetalExchangeAdvancePage from "./pages/metal-exchange/MetalExchangeAdvancePage";
+import OrdersPage from "./pages/orders/OrdersPage";
+import OrdersNewPage from "./pages/orders/OrdersNewPage";
+import StockPage from "./pages/stock/StockPage";
+import StockNewItemPage from "./pages/stock/StockNewItemPage";
+import StockMovementsPage from "./pages/stock/StockMovementsPage";
+import StockLowStockPage from "./pages/stock/StockLowStockPage";
 
 function App() {
   return (
@@ -46,22 +59,36 @@ function App() {
           <Route path="invoices" element={<CustomerInvoices />} />
           <Route path="orders" element={<CustomerOrders />} />
         </Route>
-        <Route path="/customerDashboard" element={<CustomerDashboard />} />
-        <Route path="/addCustomer" element={<AddCustomerPage />} />
-        <Route path="/buyProduct" element={<BuyProduct />} />
-        <Route path="/customer/:customerId" element={<CustomerAccount />} />
-        <Route path="/transactions/:customerId" element={<CustomerAccount />} />
-        <Route path="/transactions" element={<EditProductPopup />} />
-        <Route path="/home" element={<Home />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/charts" element={<ChartsDashboard />} />
-        <Route path="/workers" element={<WorkersPage />} />
-        <Route path="/daily-sales" element={<DailySalesPage />} />
-        <Route path="/payments" element={<PaymentsPage />} />
-        <Route path="/import-customers" element={<ImportCustomersPage />} />
-        <Route path="/upload-bill" element={<UploadBillPage />} />
-        <Route path="/reminders" element={<RemindersPage />} />
-        <Route path="/shop" element={<ShopPage />} />
+        <Route path="/" element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
+          <Route path="customerDashboard" element={<CustomerDashboard />} />
+          <Route path="addCustomer" element={<AddCustomerPage />} />
+          <Route path="buyProduct" element={<BuyProduct />} />
+          <Route path="customer/:customerId" element={<CustomerAccount />} />
+          <Route path="transactions/:customerId" element={<CustomerAccount />} />
+          <Route path="transactions" element={<EditProductPopup />} />
+          <Route path="home" element={<Home />} />
+          <Route path="admin" element={<AdminDashboard />} />
+          <Route path="charts" element={<ChartsDashboard />} />
+          <Route path="workers" element={<WorkersPage />} />
+          <Route path="daily-sales" element={<DailySalesPage />} />
+          <Route path="payments" element={<PaymentsPage />} />
+          <Route path="import-customers" element={<ImportCustomersPage />} />
+          <Route path="upload-bill" element={<UploadBillPage />} />
+          <Route path="reminders" element={<RemindersPage />} />
+          <Route path="shop" element={<ShopPage />} />
+          <Route path="girvi" element={<GirviPage />} />
+          <Route path="girvi/new" element={<GirviNewPage />} />
+          <Route path="girvi/interest-due" element={<GirviInterestDuePage />} />
+          <Route path="metal-exchange" element={<MetalExchangePage />} />
+          <Route path="metal-exchange/new" element={<MetalExchangeNewPage />} />
+          <Route path="metal-exchange/advance" element={<MetalExchangeAdvancePage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="orders/new" element={<OrdersNewPage />} />
+          <Route path="stock" element={<StockPage />} />
+          <Route path="stock/items/new" element={<StockNewItemPage />} />
+          <Route path="stock/movements" element={<StockMovementsPage />} />
+          <Route path="stock/low-stock" element={<StockLowStockPage />} />
+        </Route>
       </Routes>
     </Router>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import BackButton from "../ui/BackButton";
+import LanguageSwitcher from "../ui/LanguageSwitcher";
 import {
   ChartBarIcon,
   UsersIcon,
@@ -14,8 +15,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { SHOP_MENU_SECTIONS } from "../../constants/shopMenu";
 import { getToken, parseJwt, API_BASE, authHeaders } from "../../api";
+import { useLanguage } from "../../context/LanguageContext";
 
 export default function ShopLayout({ children }) {
+  const { t } = useLanguage();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [companyName, setCompanyName] = useState(null);
@@ -60,7 +63,7 @@ export default function ShopLayout({ children }) {
             {shopLogo ? (
               <img src={shopLogo} alt="" className="w-full h-full object-contain" />
             ) : (
-              <span className="text-gray-400 text-xs">Logo</span>
+              <span className="text-gray-400 text-xs">{t("common.logo")}</span>
             )}
           </div>
         ) : (
@@ -70,7 +73,7 @@ export default function ShopLayout({ children }) {
                 {shopLogo ? (
                   <img src={shopLogo} alt="" className="w-full h-full object-contain" />
                 ) : (
-                  <span className="text-gray-400 text-xs">Logo</span>
+                  <span className="text-gray-400 text-xs">{t("common.logo")}</span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -94,7 +97,7 @@ export default function ShopLayout({ children }) {
                         }
                       }}
                     />
-                    Upload logo
+                    {t("common.uploadLogo")}
                   </label>
                 )}
               </div>
@@ -118,25 +121,25 @@ export default function ShopLayout({ children }) {
       </div>
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
         {SHOP_MENU_SECTIONS.map((section) => (
-          <div key={section.label}>
+          <div key={section.labelKey || section.label}>
             {!collapsed && (
               <p className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                {section.label}
+                {t(`menu.${section.labelKey}`)}
               </p>
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => (
                 <Link
-                  key={item.to + item.name}
+                  key={item.to + (item.nameKey || item.name)}
                   to={item.to}
                   onClick={onClickLink}
                   className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
                     collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
                   }`}
-                  title={collapsed ? item.name : undefined}
+                  title={collapsed ? t(`menu.${item.nameKey}`) : undefined}
                 >
                   <item.icon className="h-6 w-6 text-blue-600 shrink-0" />
-                  {!collapsed && <span className="font-medium text-gray-700">{item.name}</span>}
+                  {!collapsed && <span className="font-medium text-gray-700">{t(`menu.${item.nameKey}`)}</span>}
                 </Link>
               ))}
             </div>
@@ -146,7 +149,7 @@ export default function ShopLayout({ children }) {
           <>
             {!collapsed && (
               <p className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Admin
+                {t("menu.admin")}
               </p>
             )}
             <Link
@@ -155,10 +158,10 @@ export default function ShopLayout({ children }) {
               className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
                 collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
               }`}
-              title={collapsed ? "Admin" : undefined}
+              title={collapsed ? t("menu.admin") : undefined}
             >
               <ShieldCheckIcon className="h-6 w-6 text-blue-600 shrink-0" />
-              {!collapsed && <span className="font-medium text-gray-700">Admin</span>}
+              {!collapsed && <span className="font-medium text-gray-700">{t("menu.admin")}</span>}
             </Link>
           </>
         )}
@@ -199,7 +202,7 @@ export default function ShopLayout({ children }) {
           />
           <div className="relative w-[min(280px,85vw)] max-w-full bg-white shadow-xl z-50 flex flex-col h-full">
             <div className="flex items-center justify-between p-4 border-b shrink-0">
-              <span className="font-semibold text-gray-900">Menu</span>
+              <span className="font-semibold text-gray-900">{t("common.menu")}</span>
               <button
                 type="button"
                 className="p-2 -m-2 rounded-lg hover:bg-gray-100"
@@ -228,14 +231,16 @@ export default function ShopLayout({ children }) {
             <Bars3Icon className="h-6 w-6 text-gray-700" />
           </button>
           <span className="font-bold text-gray-900 truncate flex-1 min-w-0 text-center">{displayName}</span>
-          <div className="shrink-0">
-            <BackButton className="text-gray-600" label="Back" />
+          <div className="shrink-0 flex items-center gap-2">
+            <LanguageSwitcher />
+            <BackButton className="text-gray-600" label={t("common.back")} />
           </div>
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto p-4 md:p-6 bg-gray-50">
-          <div className="hidden md:block mb-4">
-            <BackButton label="Back" />
+          <div className="hidden md:flex md:items-center md:justify-between md:mb-4">
+            <BackButton label={t("common.back")} />
+            <LanguageSwitcher />
           </div>
           {children}
         </main>

@@ -14,6 +14,12 @@ from typing import List, Optional
 router = APIRouter(tags=["Customers"])
 
 
+def _normalize_phone(s: str) -> str:
+    if not s:
+        return ""
+    return "".join(c for c in str(s).strip() if c.isdigit())
+
+
 def _store_filter(q, payload):
     store_id = payload.get("store_id")
     if store_id is not None:
@@ -31,6 +37,22 @@ def add_customer(
 ):
     try:
         store_id = payload.get("store_id")
+        if store_id is None:
+            raise HTTPException(status_code=403, detail="Store required")
+        norm_phone = _normalize_phone(customer.primary_phone)
+        if norm_phone:
+            q = db.query(Customer).filter(Customer.store_id == store_id, Customer.is_active == True)
+            for c in q.all():
+                if _normalize_phone(c.primary_phone) == norm_phone:
+                    raise HTTPException(status_code=400, detail="A customer with this phone number already exists in your store")
+        if customer.email and customer.email.strip():
+            existing_email = db.query(Customer).filter(
+                Customer.store_id == store_id,
+                Customer.email == customer.email.strip(),
+                Customer.is_active == True,
+            ).first()
+            if existing_email:
+                raise HTTPException(status_code=400, detail="A customer with this email already exists in your store")
         new_customer = Customer(
             name=customer.name,
             father_name=customer.father_name,
@@ -120,6 +142,22 @@ def import_customers_excel(
         address = cells[address_col] if address_col is not None and address_col < len(cells) and cells[address_col] else None
         if address:
             address = str(address).strip()
+        norm_phone = _normalize_phone(phone)
+        if not norm_phone:
+            errors.append(f"Row {row_idx}: Invalid phone")
+            continue
+        dup = db.query(Customer).filter(Customer.store_id == store_id, Customer.is_active == True).all()
+        if any(_normalize_phone(c.primary_phone) == norm_phone for c in dup):
+            errors.append(f"Row {row_idx}: Phone already exists in store")
+            continue
+        if email and email.strip():
+            if db.query(Customer).filter(
+                Customer.store_id == store_id,
+                Customer.email == email.strip(),
+                Customer.is_active == True,
+            ).first():
+                errors.append(f"Row {row_idx}: Email already exists in store")
+                continue
         try:
             new_customer = Customer(
                 name=name,
@@ -150,7 +188,25 @@ def update_customer(
         customer = q.first()
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found")
-
+        norm_phone = _normalize_phone(updated_data.primary_phone)
+        if norm_phone:
+            q = db.query(Customer).filter(
+                Customer.store_id == payload.get("store_id"),
+                Customer.is_active == True,
+                Customer.id != customer_id,
+            )
+            for c in q.all():
+                if _normalize_phone(c.primary_phone) == norm_phone:
+                    raise HTTPException(status_code=400, detail="Another customer in your store already has this phone number")
+        if updated_data.email and updated_data.email.strip():
+            existing_email = db.query(Customer).filter(
+                Customer.store_id == payload.get("store_id"),
+                Customer.email == updated_data.email.strip(),
+                Customer.is_active == True,
+                Customer.id != customer_id,
+            ).first()
+            if existing_email:
+                raise HTTPException(status_code=400, detail="Another customer in your store already has this email")
         customer.name = updated_data.name
         customer.father_name = updated_data.father_name
         customer.primary_phone = updated_data.primary_phone
@@ -243,6 +299,11 @@ def create_invite(
     customer = q.first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    db.query(CustomerInvite).filter(
+        CustomerInvite.customer_id == customer_id,
+        CustomerInvite.used_at.is_(None),
+        CustomerInvite.expires_at > datetime.utcnow(),
+    ).delete(synchronize_session=False)
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(days=7)
     invite = CustomerInvite(

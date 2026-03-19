@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from schemas.user_schema import (
     UserRegister,
@@ -51,7 +51,13 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(request: Request, user: UserLogin, db: Session = Depends(get_db)):
+    from utils.rate_limit import is_rate_limited, record_attempt
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"login:{client_ip}"
+    if is_rate_limited(key):
+        raise HTTPException(status_code=429, detail="Too many login attempts; try again later")
+    record_attempt(key)
     token = login_user(user.email, user.password, db)
     return {"token": token}
 
@@ -74,7 +80,13 @@ def customer_register(
 
 
 @router.post("/forgot-password")
-def forgot_password_route(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password_route(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    from utils.rate_limit import is_rate_limited, record_attempt
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"forgot:{client_ip}"
+    if is_rate_limited(key):
+        raise HTTPException(status_code=429, detail="Too many requests; try again later")
+    record_attempt(key)
     result = forgot_password(body.email, db)
     return result
 

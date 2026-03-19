@@ -2,6 +2,8 @@
 
 This document lists the requirements for the customer management project and how to install them.
 
+**New modules (see `docs/NEW_FEATURES_PLAN.md`):** Girvi (loans), Metal Exchange, Orders & Repairs, Stock. Backend APIs: `/api/girvi`, `/api/metal-exchange`, `/api/orders`, `/api/stock`. Run the backend once so new DB tables are created (`Base.metadata.create_all`).
+
 ---
 
 ## Backend (Python)

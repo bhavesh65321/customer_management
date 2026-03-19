@@ -5,11 +5,17 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Configuration (should be in environment variables)
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback_secret_key")  # Never hardcode!
+def _get_secret_key() -> str:
+    key = os.getenv("SECRET_KEY")
+    if key:
+        return key
+    if os.getenv("ENV", "development").lower() in ("production", "prod"):
+        raise RuntimeError("SECRET_KEY must be set in production")
+    return "dev_only_fallback_secret_key"
+
+SECRET_KEY = _get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

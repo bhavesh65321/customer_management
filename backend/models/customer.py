@@ -27,3 +27,6 @@ class Customer(Base):
     transactions = relationship("Transaction", back_populates="customer")
     user = relationship("User", back_populates="customer", uselist=False)
     invites = relationship("CustomerInvite", back_populates="customer")
+    girvi_loans = relationship("GirviLoan", back_populates="customer")
+    metal_exchanges = relationship("MetalExchange", back_populates="customer")
+    orders = relationship("Order", back_populates="customer")

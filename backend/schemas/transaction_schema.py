@@ -1,6 +1,7 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, model_validator
 from typing import List, Optional
 from datetime import datetime
+
 
 class Product(BaseModel):
     productName: str
@@ -31,6 +32,16 @@ class TransactionCreate(BaseModel):
     date: datetime
     billType: Optional[str] = None
     billPhotoUrl: Optional[str] = None
+
+    @model_validator(mode="after")
+    def paid_due_equal_grand_total(self):
+        paid = self.paidAmount
+        due = self.dueAmount
+        grand = self.grandTotal
+        if paid is not None and due is not None and grand is not None:
+            if abs((paid + due) - grand) > 0.01:
+                raise ValueError("paidAmount + dueAmount must equal grandTotal")
+        return self
 
 
 class TransactionResponse(BaseModel):

@@ -18,7 +18,10 @@ def list_rates(
 
 
 @router.get("/current")
-def get_current_rates(db: Session = Depends(get_db)):
+def get_current_rates(
+    db: Session = Depends(get_db),
+    _auth=Depends(require_staff),
+):
     all_rates = (
         db.query(MetalRate).order_by(MetalRate.effective_from.desc()).all()
     )

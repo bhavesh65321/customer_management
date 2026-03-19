@@ -22,3 +22,7 @@ class Store(Base):
     inventory_pieces = relationship("InventoryPiece", back_populates="store")
     users = relationship("User", back_populates="store")
     payments = relationship("Payment", back_populates="store")
+    girvi_loans = relationship("GirviLoan", back_populates="store")
+    metal_exchanges = relationship("MetalExchange", back_populates="store")
+    orders = relationship("Order", back_populates="store")
+    stock_items = relationship("StockItem", back_populates="store")

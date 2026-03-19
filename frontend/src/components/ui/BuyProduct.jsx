@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { authHeaders, API_BASE } from "../../api";
+import InlineError from "./InlineError";
 
 const BuyProduct = ({ customer, isOpen, onClose }) => {
+  const [error, setError] = useState("");
 
   const initialProduct = {
     productName: "",
@@ -65,10 +67,11 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setError("");
     const cid = parseInt(customerId, 10);
     if (!cid || !(customer?.name ?? "").trim()) {
-      alert("Please select a customer. Go to Customers and open a customer, then click Buy / Create Bill.");
+      setError("Please select a customer. Go to Customers and open a customer, then click Buy / Create Bill.");
       return;
     }
     const transactionData = {
@@ -81,26 +84,22 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
       date: new Date().toISOString(),
       billType: billType || "For Material",
     };
-    console.log(transactionData);
-    console.log(JSON.stringify(transactionData))
-
-    fetch(`${API_BASE}/api/transactions/add`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(transactionData),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to save transaction");
-        return res.json();
-      })
-      .then((data) => {
-        alert("Transaction saved successfully!");
-        onClose();
-      })
-      .catch((err) => {
-        console.error(err);
-        alert("Failed to save transaction");
+    try {
+      const res = await fetch(`${API_BASE}/api/transactions/add`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(transactionData),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(`${res.status}: ${d.detail || "Failed to save transaction"}`);
+        return;
+      }
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to save transaction.");
+    }
   };
 
   const getWeightUnit = (metalType) => {
@@ -135,7 +134,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center border-b pb-4 mb-4">
                   <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
                     New Purchase {customer?.name ? `for ${customer.name}` : ""}
                   </Dialog.Title>
@@ -143,6 +142,10 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
                     <XMarkIcon className="h-6 w-6" />
                   </button>
                 </div>
+
+                {error && (
+                  <InlineError message={error} onDismiss={() => setError("")} className="mb-4" />
+                )}
 
                 <div className="space-y-6">
                   <div>

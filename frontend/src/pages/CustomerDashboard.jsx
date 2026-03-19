@@ -7,6 +7,8 @@ import BuyProduct from "../components/ui/BuyProduct";
 import ShopLayout from "../components/layout/ShopLayout";
 import { useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
+import InlineError from "../components/ui/InlineError";
+import { useLanguage } from "../context/LanguageContext";
 import { authHeaders, API_BASE } from "../api"; 
 
 export default function CustomerDashboard() {
@@ -20,8 +22,10 @@ export default function CustomerDashboard() {
   const [showBuyPopup, setShowBuyPopup] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [formError, setFormError] = useState("");
 
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetchCustomers();
@@ -52,6 +56,7 @@ export default function CustomerDashboard() {
 
 
   const handleAddCustomer = async (customerData) => {
+    setFormError("");
     const payload = {
       name: customerData.name,
       father_name: customerData.fatherName,
@@ -81,15 +86,17 @@ export default function CustomerDashboard() {
       if (res.ok) {
         setShowDrawer(false);
         setSelectedCustomer(null);
+        setFormError("");
         fetchCustomers();
-      } else {
-        const d = await res.json().catch(() => ({}));
-        alert(d.detail || "Failed to save customer");
-        throw new Error(d.detail || "Failed");
+        return;
       }
+      const d = await res.json().catch(() => ({}));
+      const msg = `${res.status}: ${d.detail || "Failed to save customer"}`;
+      setFormError(msg);
+      throw new Error(msg);
     } catch (err) {
       console.error(err);
-      alert(err.message || "Something went wrong.");
+      if (err.message && !formError) setFormError(err.message);
       throw err;
     }
   };
@@ -110,11 +117,12 @@ export default function CustomerDashboard() {
         setShowDeleteModal(false);
         setCustomerToDelete(null);
       } else {
-        alert("Failed to deactivate customer.");
+        const d = await res.json().catch(() => ({}));
+        setFormError(`${res.status}: ${d.detail || "Failed to deactivate customer."}`);
       }
     } catch (err) {
       console.error("Deactivate error:", err);
-      alert("Something went wrong.");
+      setFormError(err.message || "Something went wrong. Please try again.");
     }
   };
   
@@ -184,14 +192,16 @@ export default function CustomerDashboard() {
   return (
     <ShopLayout>
       <div className="max-w-7xl mx-auto w-full min-w-0">
+        {!showDrawer && formError && (
+          <InlineError message={formError} onDismiss={() => setFormError("")} className="mb-4" />
+        )}
         <div className="flex flex-col gap-4 mb-4 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Customers</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">{t("customer.title")}</h1>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
-  {/* Search Bar */}
   <div className="relative">
     <Input
-      placeholder="Search customers..."
+      placeholder={t("customer.searchPlaceholder")}
       value={searchTerm}
       onChange={(e) => setSearchTerm(e.target.value)}
       className="w-full pl-10 pr-4 py-2"
@@ -213,29 +223,27 @@ export default function CustomerDashboard() {
     onChange={(e) => setFilter(e.target.value)}
     className="w-full"
     options={[
-      { label: "Active", value: "active" },
-      { label: "Inactive", value: "inactive" },
-      { label: "All", value: "all" },
+      { label: t("customer.filterActive"), value: "active" },
+      { label: t("customer.filterInactive"), value: "inactive" },
+      { label: t("customer.filterAll"), value: "all" },
     ]}
   />
 
-  {/* Sort Dropdown */}
   <Select
     value={sort}
     onChange={(e) => setSort(e.target.value)}
     className="w-full"
     options={[
-      { label: "Sort By", value: "" },
-      { label: "Newest", value: "recent" },
-      { label: "Oldest", value: "oldest" },
-      { label: "Name (A-Z)", value: "name" },
+      { label: t("customer.sortBy"), value: "" },
+      { label: t("customer.sortNewest"), value: "recent" },
+      { label: t("customer.sortOldest"), value: "oldest" },
+      { label: t("customer.sortName"), value: "name" },
     ]}
   />
 
-  {/* Add Button */}
   <div className="flex sm:justify-end">
-    <Button onClick={() => setShowDrawer(true)} className="w-full sm:w-auto bg-blue-600 text-white">
-      + Add Customer
+    <Button onClick={() => { setFormError(""); setShowDrawer(true); }} className="w-full sm:w-auto bg-blue-600 text-white">
+      + {t("customer.addCustomer")}
     </Button>
   </div>
 </div>
@@ -249,15 +257,15 @@ export default function CustomerDashboard() {
           </div>
         ) : sortedCustomers.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-            <h3 className="text-lg font-semibold text-gray-900">No customers found</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t("customer.noCustomersFound")}</h3>
             <p className="text-gray-500">
               {searchTerm || filter
-                ? "Try changing search or filter"
-                : "Add your first customer to get started."}
+                ? t("customer.tryChangingFilter")
+                : t("customer.addFirstCustomer")}
             </p>
             <div className="mt-4">
-              <Button onClick={() => setShowDrawer(true)} className="bg-blue-600 text-white">
-                + Add Customer
+              <Button onClick={() => { setFormError(""); setShowDrawer(true); }} className="bg-blue-600 text-white">
+                + {t("customer.addCustomer")}
               </Button>
             </div>
           </div>
@@ -267,11 +275,11 @@ export default function CustomerDashboard() {
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
                   <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Contact</th>
-                    <th className="px-4 py-3 text-left">Location</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-left">{t("customer.tableName")}</th>
+                    <th className="px-4 py-3 text-left">{t("customer.tableContact")}</th>
+                    <th className="px-4 py-3 text-left">{t("customer.tableLocation")}</th>
+                    <th className="px-4 py-3 text-left">{t("customer.tableStatus")}</th>
+                    <th className="px-4 py-3 text-right">{t("customer.tableActions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -293,7 +301,7 @@ export default function CustomerDashboard() {
                         <span className={`text-xs px-2 py-1 rounded-full ${
                           customer.is_active !== false ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"
                         }`}>
-                          {customer.is_active !== false ? "Active" : "Inactive"}
+                          {customer.is_active !== false ? t("customer.active") : t("customer.inactive")}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -303,21 +311,21 @@ export default function CustomerDashboard() {
                             onClick={() => navigate(`/customer/${customer.id}`)}
                             className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60"
                           >
-                            View
+                            {t("customer.view")}
                           </button>
                           <button
                             type="button"
                             onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
                             className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
                           >
-                            Buy
+                            {t("customer.buy")}
                           </button>
                           <button
                             type="button"
-                            onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }}
+                            onClick={() => { setSelectedCustomer(customer); setFormError(""); setShowDrawer(true); }}
                             className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
                           >
-                            Edit
+                            {t("customer.edit")}
                           </button>
                           {customer.is_active !== false && (
                             <button
@@ -325,7 +333,7 @@ export default function CustomerDashboard() {
                               onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }}
                               className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
                             >
-                              Deactivate
+                              {t("customer.deactivate")}
                             </button>
                           )}
                         </div>
@@ -350,7 +358,7 @@ export default function CustomerDashboard() {
                     <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${
                       customer.is_active !== false ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"
                     }`}>
-                      {customer.is_active !== false ? "Active" : "Inactive"}
+                      {customer.is_active !== false ? t("customer.active") : t("customer.inactive")}
                     </span>
                   </div>
                   <div className="text-sm text-gray-600 mb-3">
@@ -363,21 +371,21 @@ export default function CustomerDashboard() {
                       onClick={() => navigate(`/customer/${customer.id}`)}
                       className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60"
                     >
-                      View
+                      {t("customer.view")}
                     </button>
                     <button
                       type="button"
                       onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
                     >
-                      Buy
+                      {t("customer.buy")}
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setSelectedCustomer(customer); setShowDrawer(true); }}
+                      onClick={() => { setSelectedCustomer(customer); setFormError(""); setShowDrawer(true); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
                     >
-                      Edit
+                      {t("customer.edit")}
                     </button>
                     {customer.is_active !== false && (
                       <button
@@ -385,7 +393,7 @@ export default function CustomerDashboard() {
                         onClick={() => { setCustomerToDelete(customer); setShowDeleteModal(true); }}
                         className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
                       >
-                        Deactivate
+                        {t("customer.deactivate")}
                       </button>
                     )}
                   </div>
@@ -404,21 +412,24 @@ export default function CustomerDashboard() {
       /> */}
       
       <AddCustomerDrawer
-      isOpen={showDrawer}
-      onClose={() => {
-        setShowDrawer(false);
-        setSelectedCustomer(null); // reset selected customer on close
+        isOpen={showDrawer}
+        onClose={() => {
+          setShowDrawer(false);
+          setSelectedCustomer(null);
+          setFormError("");
         }}
-      onAdd={handleAddCustomer}
-      initialData={selectedCustomer}
+        onAdd={handleAddCustomer}
+        initialData={selectedCustomer}
+        error={formError}
+        onClearError={() => setFormError("")}
       />
 
       <ConfirmDialog
         open={showDeleteModal}
-        title="Deactivate Customer"
-        content="Mark this customer as inactive? They will no longer appear in the active list. You can view them by filtering by Inactive."
-        confirmText="Deactivate"
-        cancelText="Cancel"
+        title={t("customer.deactivateTitle")}
+        content={t("customer.deactivateContent")}
+        confirmText={t("customer.deactivate")}
+        cancelText={t("common.cancel")}
         onConfirm={handleDeleteCustomer}
         onCancel={() => setShowDeleteModal(false)}
       />

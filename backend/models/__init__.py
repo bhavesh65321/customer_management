@@ -12,6 +12,11 @@ from models.payment import Payment
 from models.audit_log import AuditLog
 from models.rates_config import MetalRate
 from models.password_reset_token import PasswordResetToken
+from models.girvi_loan import GirviLoan, GirviPhoto, GirviInterestPayment
+from models.metal_exchange import MetalExchange
+from models.order_repair import Order
+from models.stock_item import StockItem, StockMovement
+from models.idempotency import PaymentIdempotency
 
 __all__ = [
     "Customer",
@@ -26,4 +31,12 @@ __all__ = [
     "AuditLog",
     "MetalRate",
     "PasswordResetToken",
+    "GirviLoan",
+    "GirviPhoto",
+    "GirviInterestPayment",
+    "MetalExchange",
+    "Order",
+    "StockItem",
+    "StockMovement",
+    "PaymentIdempotency",
 ]

@@ -13,6 +13,7 @@ import {
 } from "../utils/productCalculations";
 import { CUSTOMER_FORM_INITIAL, customerFormToPayload } from "../utils/customerPayload";
 import { PageContainer, SectionCard } from "../components/ui/PageSection";
+import InlineError from "../components/ui/InlineError";
 
 export default function ShopPage() {
   const [searchParams] = useSearchParams();
@@ -26,6 +27,7 @@ export default function ShopPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saleSuccess, setSaleSuccess] = useState(false);
+  const [error, setError] = useState("");
 
   const [products, setProducts] = useState([{ ...INITIAL_PRODUCT }]);
   const [paidAmount, setPaidAmount] = useState("");
@@ -66,6 +68,7 @@ export default function ShopPage() {
   }, [step, customerMode]);
 
   const handleCreateCustomer = async () => {
+    setError("");
     setLoading(true);
     try {
       const payload = customerFormToPayload(newCustomer);
@@ -76,13 +79,15 @@ export default function ShopPage() {
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || "Failed to add customer");
+        setError(`${res.status}: ${d.detail || "Failed to add customer"}`);
+        return;
       }
       const created = await res.json();
       setCustomer(created);
       setStep(2);
     } catch (err) {
-      alert(err.message);
+      setError(err.message || "Something went wrong.");
+      return;
     } finally {
       setLoading(false);
     }
@@ -103,6 +108,7 @@ export default function ShopPage() {
 
   const handleSaleSubmit = async () => {
     if (!customer?.id) return;
+    setError("");
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/transactions/add`, {
@@ -119,12 +125,17 @@ export default function ShopPage() {
           billType: billType || "For Material",
         }),
       });
-      if (!res.ok) throw new Error("Failed to save transaction");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(`${res.status}: ${d.detail || "Failed to save transaction"}`);
+        return;
+      }
       setSaleSuccess(true);
-      setProducts([{ ...initialProduct }]);
+      setProducts([{ ...INITIAL_PRODUCT }]);
       setPaidAmount("");
     } catch (err) {
-      alert(err.message);
+      setError(err.message || "Failed to save transaction.");
+      return;
     } finally {
       setLoading(false);
     }
@@ -146,6 +157,9 @@ export default function ShopPage() {
   return (
     <ShopLayout>
       <PageContainer title="Shop" maxWidth="max-w-4xl">
+        {error && (
+          <InlineError message={error} onDismiss={() => setError("")} className="mb-4" />
+        )}
         {step === 1 && (
           <CustomerSelectionStep
             customerMode={customerMode}

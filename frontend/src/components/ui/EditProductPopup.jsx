@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { authHeaders, API_BASE } from "../../api";
+import InlineError from "./InlineError";
 
 const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
   // Initialize state with proper fallbacks
@@ -124,21 +125,20 @@ const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
 
 
       if (!response.ok) {
-        throw new Error(response.statusText || "Failed to update transaction");
+        const d = await response.json().catch(() => ({}));
+        setError(`${response.status}: ${d.detail || "Error updating transaction"}`);
+        return;
       }
-      
       const updatedTransaction = await response.json();
 
       if (onUpdate) {
         onUpdate(updatedTransaction);
       }
-
-      alert("Transaction updated successfully!");
       onClose();
 
-    } catch (error) {
-      console.error("Update error:", error);
-      setError(error.message || "Error updating transaction");
+    } catch (err) {
+      console.error("Update error:", err);
+      setError(err.message || "Error updating transaction");
     } finally {
       setIsLoading(false);
     }
@@ -190,7 +190,7 @@ const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center border-b pb-4 mb-4">
                   <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
                     Edit Purchase for {productData.customerName}
                   </Dialog.Title>
@@ -200,9 +200,7 @@ const EditProductPopup = ({ productData, isOpen, onClose, onUpdate }) => {
                 </div>
 
                 {error && (
-                  <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">
-                    {error}
-                  </div>
+                  <InlineError message={error} onDismiss={() => setError(null)} className="mb-4" />
                 )}
 
                 <div className="space-y-6">

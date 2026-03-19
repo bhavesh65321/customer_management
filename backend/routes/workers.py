@@ -7,6 +7,7 @@ from dependencies import require_staff
 from models.user_model import User
 from schemas.user_schema import UserOut, AdminUserUpdate, WorkerCreate
 from utils.auth_utils import hash_password
+from controllers.auth_controller import _validate_password_strength
 
 router = APIRouter(tags=["Workers"])
 
@@ -37,6 +38,7 @@ def add_worker(
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    _validate_password_strength(body.password)
     new_user = User(
         name=body.name,
         email=body.email,
