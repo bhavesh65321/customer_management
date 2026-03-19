@@ -27,6 +27,7 @@ class StoreResponse(BaseModel):
     contact_phone: Optional[str] = None
     is_active: bool = True
     license_type: Optional[str] = None
+    logo_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -42,3 +43,4 @@ class StoreUpdate(BaseModel):
     contact_phone: Optional[str] = None
     is_active: Optional[bool] = None
     license_type: Optional[str] = Field(None, pattern="^(general|simple|premium)$")
+    logo_url: Optional[str] = None

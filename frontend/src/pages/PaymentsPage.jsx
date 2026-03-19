@@ -1,25 +1,46 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import ShopLayout from "../components/layout/ShopLayout";
-import { API_BASE, authHeaders } from "../api";
 import { useNavigate } from "react-router-dom";
+import ShopLayout from "../components/layout/ShopLayout";
+import CustomerSelectWithAdd from "../components/ui/CustomerSelectWithAdd";
+import { API_BASE, authHeaders } from "../api";
+import { useLanguage } from "../context/LanguageContext";
 
-const TABS = [
-  { id: "record", label: "Record Payment" },
-  { id: "outstanding", label: "Outstanding Balance" },
-  { id: "history", label: "Payment History" },
-];
+function normalizePhone(s) {
+  if (s == null || s === "") return "";
+  return String(s).replace(/\D/g, "");
+}
+
+function customerMatchesPhoneQuery(customer, queryDigits) {
+  if (!queryDigits) return false;
+  const p1 = normalizePhone(customer.primary_phone);
+  const p2 = normalizePhone(customer.secondary_phone);
+  return (
+    p1.includes(queryDigits) ||
+    p2.includes(queryDigits) ||
+    p1.endsWith(queryDigits) ||
+    p2.endsWith(queryDigits)
+  );
+}
+
+const TAB_IDS = ["record", "outstanding", "history"];
 
 export default function PaymentsPage() {
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab") || "record";
   const [activeTab, setActiveTab] = useState(
-    TABS.some((t) => t.id === tabFromUrl) ? tabFromUrl : "record"
+    TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "record"
   );
   const [outstanding, setOutstanding] = useState({ items: [], totalDue: 0, count: 0 });
   const [history, setHistory] = useState([]);
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [recordLookupMode, setRecordLookupMode] = useState("bill");
+  const [recordCustomerId, setRecordCustomerId] = useState("");
+  const [phoneSearch, setPhoneSearch] = useState("");
+  const [phonePickCustomerId, setPhonePickCustomerId] = useState("");
+  const [phoneMatchedIds, setPhoneMatchedIds] = useState([]);
   const [recordTransactionId, setRecordTransactionId] = useState("");
   const [recordAmount, setRecordAmount] = useState("");
   const [recordMode, setRecordMode] = useState("Cash");
@@ -28,9 +49,15 @@ export default function PaymentsPage() {
   const [recordSuccess, setRecordSuccess] = useState(false);
   const navigate = useNavigate();
 
+  const tabLabels = {
+    record: t("payments.recordPayment"),
+    outstanding: t("payments.outstandingBalance"),
+    history: t("payments.paymentHistory"),
+  };
+
   useEffect(() => {
-    const t = searchParams.get("tab") || "record";
-    if (TABS.some((x) => x.id === t)) setActiveTab(t);
+    const t0 = searchParams.get("tab") || "record";
+    if (TAB_IDS.includes(t0)) setActiveTab(t0);
   }, [searchParams]);
 
   const switchTab = (id) => {
@@ -38,14 +65,22 @@ export default function PaymentsPage() {
     setSearchParams(id === "record" ? {} : { tab: id });
   };
 
-  useEffect(() => {
-    if (activeTab !== "outstanding") return;
+  const loadOutstanding = () => {
     setLoadingOutstanding(true);
     fetch(`${API_BASE}/api/payments/outstanding`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : { items: [], totalDue: 0, count: 0 }))
       .then((data) => setOutstanding(data))
       .catch(() => setOutstanding({ items: [], totalDue: 0, count: 0 }))
       .finally(() => setLoadingOutstanding(false));
+  };
+
+  useEffect(() => {
+    loadOutstanding();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "outstanding") return;
+    loadOutstanding();
   }, [activeTab]);
 
   useEffect(() => {
@@ -57,6 +92,41 @@ export default function PaymentsPage() {
       .catch(() => setHistory([]))
       .finally(() => setLoadingHistory(false));
   }, [activeTab]);
+
+  const billsForRecordCustomer = useMemo(() => {
+    const items = outstanding.items || [];
+    if (recordLookupMode !== "customer" || !recordCustomerId) return [];
+    return items.filter((row) => String(row.customerId) === String(recordCustomerId));
+  }, [outstanding.items, recordLookupMode, recordCustomerId]);
+
+  const billsForPhoneCustomer = useMemo(() => {
+    const items = outstanding.items || [];
+    const cid = phonePickCustomerId;
+    if (recordLookupMode !== "phone" || !cid) return [];
+    return items.filter((row) => String(row.customerId) === String(cid));
+  }, [outstanding.items, recordLookupMode, phonePickCustomerId]);
+
+  const runPhoneLookup = async () => {
+    setRecordError(null);
+    setPhoneMatchedIds([]);
+    setPhonePickCustomerId("");
+    const q = normalizePhone(phoneSearch);
+    if (!q || q.length < 4) {
+      setRecordError(t("payments.enterPhone"));
+      return;
+    }
+    const res = await fetch(`${API_BASE}/api/customer/all`, { headers: authHeaders() });
+    const list = res.ok ? await res.json() : [];
+    const customers = Array.isArray(list) ? list : [];
+    const matched = customers.filter((c) => customerMatchesPhoneQuery(c, q));
+    const ids = matched.map((c) => String(c.id));
+    setPhoneMatchedIds(ids);
+    if (ids.length === 0) {
+      setRecordError(t("payments.noCustomerForPhone"));
+    } else if (ids.length === 1) {
+      setPhonePickCustomerId(ids[0]);
+    }
+  };
 
   const handleRecordPayment = async (e) => {
     e.preventDefault();
@@ -86,14 +156,7 @@ export default function PaymentsPage() {
       setRecordSuccess(true);
       setRecordTransactionId("");
       setRecordAmount("");
-      if (outstanding.items?.length) {
-        setOutstanding((prev) => ({
-          ...prev,
-          items: prev.items.filter((t) => t.id !== txnId),
-          totalDue: Math.max(0, (prev.totalDue || 0) - amount),
-          count: Math.max(0, (prev.count || 0) - 1),
-        }));
-      }
+      loadOutstanding();
     } catch {
       setRecordError("Network error.");
     } finally {
@@ -101,33 +164,219 @@ export default function PaymentsPage() {
     }
   };
 
+  const pickBillRow = (row) => {
+    setRecordTransactionId(String(row.id));
+    setRecordAmount(String(row.dueAmount ?? ""));
+    setRecordError(null);
+    setRecordSuccess(false);
+  };
+
   return (
     <ShopLayout>
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Payments</h1>
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">{t("payments.title")}</h1>
         <div className="flex gap-2 border-b border-gray-200 mb-6">
-          {TABS.map((t) => (
+          {TAB_IDS.map((id) => (
             <button
-              key={t.id}
+              key={id}
               type="button"
-              onClick={() => switchTab(t.id)}
+              onClick={() => switchTab(id)}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition ${
-                activeTab === t.id
+                activeTab === id
                   ? "border-blue-600 text-blue-700 bg-blue-50"
                   : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
               }`}
             >
-              {t.label}
+              {tabLabels[id]}
             </button>
           ))}
         </div>
 
         {activeTab === "record" && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Record Payment</h2>
-            <form onSubmit={handleRecordPayment} className="space-y-4 max-w-md">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("payments.recordPayment")}</h2>
+            <p className="text-sm font-medium text-gray-700 mb-2">{t("payments.findBillBy")}</p>
+            <div className="flex flex-wrap gap-4 mb-6">
+              {[
+                { id: "bill", label: t("payments.byBillId") },
+                { id: "customer", label: t("payments.byCustomer") },
+                { id: "phone", label: t("payments.byPhone") },
+              ].map((opt) => (
+                <label key={opt.id} className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="recordLookup"
+                    checked={recordLookupMode === opt.id}
+                    onChange={() => {
+                      setRecordLookupMode(opt.id);
+                      setRecordError(null);
+                      setRecordSuccess(false);
+                    }}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm text-gray-800">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            {recordLookupMode === "customer" && (
+              <div className="mb-6 space-y-3">
+                <CustomerSelectWithAdd
+                  id="payment-record-customer"
+                  value={recordCustomerId}
+                  onChange={(v) => {
+                    setRecordCustomerId(v);
+                    setRecordError(null);
+                  }}
+                  label={`${t("payments.byCustomer")} *`}
+                />
+                <p className="text-sm text-gray-500">{t("payments.pickBillHint")}</p>
+                {loadingOutstanding ? (
+                  <div className="flex justify-center py-6">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+                  </div>
+                ) : billsForRecordCustomer.length === 0 && recordCustomerId ? (
+                  <p className="text-sm text-amber-700">{t("payments.noBillsForSelection")}</p>
+                ) : (
+                  billsForRecordCustomer.length > 0 && (
+                    <div className="overflow-x-auto border border-gray-200 rounded-md">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium text-gray-600">{t("payments.byBillId")}</th>
+                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableAmount")}</th>
+                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.dueAmount")}</th>
+                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.date")}</th>
+                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableActions")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {billsForRecordCustomer.map((row) => (
+                            <tr key={row.id} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium">{row.id}</td>
+                              <td className="px-3 py-2 text-right">
+                                ₹{(row.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right text-amber-700">
+                                ₹{(row.dueAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right text-gray-500">
+                                {row.date ? new Date(row.date).toLocaleDateString() : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => pickBillRow(row)}
+                                  className="text-blue-600 hover:underline font-medium"
+                                >
+                                  {t("payments.recordPayment")}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {recordLookupMode === "phone" && (
+              <div className="mb-6 space-y-3">
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t("payments.enterPhone")}</label>
+                    <input
+                      type="text"
+                      value={phoneSearch}
+                      onChange={(e) => setPhoneSearch(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholder="e.g. 9876543210"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runPhoneLookup}
+                    className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-200"
+                  >
+                    {t("payments.findBills")}
+                  </button>
+                </div>
+                <CustomerSelectWithAdd
+                  id="payment-phone-alt-customer"
+                  value={phonePickCustomerId}
+                  onChange={(v) => {
+                    setPhonePickCustomerId(v);
+                    setPhoneMatchedIds([]);
+                    setPhoneSearch("");
+                    setRecordError(null);
+                  }}
+                  label={t("payments.orSelectAddCustomer")}
+                />
+                {phoneMatchedIds.length > 1 && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-2">{t("payments.multipleCustomersPhone")}</p>
+                    <CustomerPhonePickList
+                      ids={phoneMatchedIds}
+                      onSelect={setPhonePickCustomerId}
+                      value={phonePickCustomerId}
+                    />
+                  </div>
+                )}
+                {phonePickCustomerId && (
+                  <>
+                    <p className="text-sm text-gray-500">{t("payments.pickBillHint")}</p>
+                    {billsForPhoneCustomer.length === 0 ? (
+                      <p className="text-sm text-amber-700">{t("payments.noBillsForSelection")}</p>
+                    ) : (
+                      <div className="overflow-x-auto border border-gray-200 rounded-md">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600">{t("payments.byBillId")}</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableAmount")}</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.dueAmount")}</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.date")}</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableActions")}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {billsForPhoneCustomer.map((row) => (
+                              <tr key={row.id} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 font-medium">{row.id}</td>
+                                <td className="px-3 py-2 text-right">
+                                  ₹{(row.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3 py-2 text-right text-amber-700">
+                                  ₹{(row.dueAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3 py-2 text-right text-gray-500">
+                                  {row.date ? new Date(row.date).toLocaleDateString() : "—"}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => pickBillRow(row)}
+                                    className="text-blue-600 hover:underline font-medium"
+                                  >
+                                    {t("payments.recordPayment")}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleRecordPayment} className="space-y-4 max-w-md border-t border-gray-100 pt-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bill / Transaction ID</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t("payments.byBillId")}</label>
                 <input
                   type="number"
                   min="1"
@@ -174,7 +423,7 @@ export default function PaymentsPage() {
                 disabled={recordSubmitting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {recordSubmitting ? "Recording…" : "Record Payment"}
+                {recordSubmitting ? "Recording…" : t("payments.recordPayment")}
               </button>
             </form>
             <p className="mt-4 text-sm text-gray-500">
@@ -295,5 +544,40 @@ export default function PaymentsPage() {
         )}
       </div>
     </ShopLayout>
+  );
+}
+
+function CustomerPhonePickList({ ids, value, onSelect }) {
+  const { t } = useLanguage();
+  const [options, setOptions] = useState([]);
+
+  useEffect(() => {
+    if (!ids.length) {
+      setOptions([]);
+      return;
+    }
+    fetch(`${API_BASE}/api/customer/all`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => {
+        const all = Array.isArray(list) ? list : [];
+        const idSet = new Set(ids.map(String));
+        setOptions(all.filter((c) => idSet.has(String(c.id))));
+      })
+      .catch(() => setOptions([]));
+  }, [ids]);
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onSelect(e.target.value)}
+      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md"
+    >
+      <option value="">{t("common.selectCustomer")}</option>
+      {options.map((c) => (
+        <option key={c.id} value={String(c.id)}>
+          {c.name} ({c.primary_phone || "—"})
+        </option>
+      ))}
+    </select>
   );
 }

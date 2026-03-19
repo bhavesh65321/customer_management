@@ -29,11 +29,14 @@ def _months_elapsed(start: date, end: date) -> int:
 @router.get("", response_model=list)
 def list_loans(
     status: Optional[str] = Query(None),
+    customer_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
     q = db.query(GirviLoan).join(Customer, GirviLoan.customer_id == Customer.id)
     q = apply_store_filter(q, GirviLoan, payload)
+    if customer_id is not None:
+        q = q.filter(GirviLoan.customer_id == customer_id)
     if status:
         q = q.filter(GirviLoan.status == status)
     q = q.order_by(GirviLoan.created_at.desc())

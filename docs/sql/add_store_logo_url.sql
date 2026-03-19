@@ -1,0 +1,2 @@
+-- Run once on existing MySQL databases if `logo_url` column is missing:
+-- ALTER TABLE stores ADD COLUMN logo_url VARCHAR(500) NULL;

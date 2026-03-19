@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ShopLayout from "../../components/layout/ShopLayout";
+import CustomerSelectWithAdd from "../../components/ui/CustomerSelectWithAdd";
 import { API_BASE, authHeaders } from "../../api";
 
 const TYPES = [
@@ -12,7 +13,6 @@ const TYPES = [
 
 export default function MetalExchangeNewPage() {
   const navigate = useNavigate();
-  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -26,13 +26,6 @@ export default function MetalExchangeNewPage() {
     making_charges: "",
     notes: "",
   });
-
-  useEffect(() => {
-    fetch(`${API_BASE}/api/customer/all`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setCustomers(Array.isArray(d) ? d : []))
-      .catch(() => setCustomers([]));
-  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -85,21 +78,13 @@ export default function MetalExchangeNewPage() {
           {error && (
             <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
-            <select
-              name="customer_id"
-              value={form.customer_id}
-              onChange={handleChange}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">Select customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
+          <CustomerSelectWithAdd
+            id="metal-exchange-customer_id"
+            value={form.customer_id}
+            onChange={(v) => setForm((f) => ({ ...f, customer_id: v }))}
+            required
+            label="Customer *"
+          />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
             <select

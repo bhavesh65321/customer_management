@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -15,6 +18,30 @@ from utils.auth_utils import hash_password
 from controllers.auth_controller import _validate_password_strength
 
 router = APIRouter(tags=["Admin"])
+
+_STORE_LOGO_DIR = Path(__file__).resolve().parent.parent / "uploads" / "store_logos"
+_STORE_LOGO_DIR.mkdir(parents=True, exist_ok=True)
+_MAX_LOGO_BYTES = 2 * 1024 * 1024
+_LOGO_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+def _delete_store_logo_file(logo_url: Optional[str]) -> None:
+    if not logo_url or "/store_logos/" not in logo_url:
+        return
+    name = Path(logo_url).name
+    if not name or ".." in name or "/" in name:
+        return
+    path = _STORE_LOGO_DIR / name
+    try:
+        if path.is_file() and path.resolve().parent == _STORE_LOGO_DIR.resolve():
+            path.unlink()
+    except OSError:
+        pass
 
 
 @router.get("/users", response_model=List[UserOut])
@@ -203,6 +230,53 @@ def delete_store_admin(
             status_code=400,
             detail="Store has users; reassign or remove them first",
         )
+    _delete_store_logo_file(store.logo_url)
     db.delete(store)
     db.commit()
     return None
+
+
+@router.post("/stores/{store_id}/logo", response_model=StoreResponse)
+async def upload_store_logo_admin(
+    store_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_admin),
+):
+    store = db.query(Store).filter(Store.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    ext = _LOGO_CONTENT_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image type. Use JPEG, PNG, WebP, or GIF.",
+        )
+    data = await file.read()
+    if len(data) > _MAX_LOGO_BYTES:
+        raise HTTPException(status_code=400, detail="Image must be 2 MB or smaller")
+    fname = f"{store_id}_{uuid.uuid4().hex[:12]}{ext}"
+    path = _STORE_LOGO_DIR / fname
+    path.write_bytes(data)
+    _delete_store_logo_file(store.logo_url)
+    store.logo_url = f"/uploads/store_logos/{fname}"
+    db.commit()
+    db.refresh(store)
+    return store
+
+
+@router.delete("/stores/{store_id}/logo", response_model=StoreResponse)
+def delete_store_logo_admin(
+    store_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_admin),
+):
+    store = db.query(Store).filter(Store.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    _delete_store_logo_file(store.logo_url)
+    store.logo_url = None
+    db.commit()
+    db.refresh(store)
+    return store

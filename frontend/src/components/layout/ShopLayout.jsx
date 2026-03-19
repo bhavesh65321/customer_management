@@ -38,7 +38,22 @@ export default function ShopLayout({ children }) {
     if (!storeId) return;
     fetch(`${API_BASE}/api/stores/me`, { headers: authHeaders() })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => data && setCompanyName(data.name))
+      .then((data) => {
+        if (!data) {
+          setCompanyName(null);
+          return;
+        }
+        setCompanyName(data.name);
+        const path = data.logo_url;
+        if (path) {
+          const fullUrl = path.startsWith("http") ? path : `${API_BASE}${path}`;
+          localStorage.setItem("shopLogo", fullUrl);
+          setShopLogo(fullUrl);
+        } else {
+          localStorage.removeItem("shopLogo");
+          setShopLogo(null);
+        }
+      })
       .catch(() => setCompanyName(null));
   }, [storeId]);
 

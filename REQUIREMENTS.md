@@ -4,6 +4,10 @@ This document lists the requirements for the customer management project and how
 
 **New modules (see `docs/NEW_FEATURES_PLAN.md`):** Girvi (loans), Metal Exchange, Orders & Repairs, Stock. Backend APIs: `/api/girvi`, `/api/metal-exchange`, `/api/orders`, `/api/stock`. Run the backend once so new DB tables are created (`Base.metadata.create_all`).
 
+**Store company logo:** The `stores` table includes optional `logo_url`. On an **existing** database created before this feature, run:  
+`ALTER TABLE stores ADD COLUMN logo_url VARCHAR(500) NULL;`  
+(see `docs/sql/add_store_logo_url.sql`). Logos are saved under `backend/uploads/store_logos/` and served at `/uploads/store_logos/...`.
+
 ---
 
 ## Backend (Python)

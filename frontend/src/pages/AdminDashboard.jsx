@@ -3,8 +3,29 @@ import { useNavigate } from "react-router-dom";
 import BackButton from "../components/ui/BackButton";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
 import InlineError from "../components/ui/InlineError";
-import { API_BASE, authHeaders, getToken, parseJwt } from "../api";
+import { API_BASE, authHeaders, authHeadersMultipart, getToken, parseJwt } from "../api";
 import { formatDate } from "../utils/format";
+
+function storeLogoSrc(logoUrl) {
+  if (!logoUrl) return null;
+  return logoUrl.startsWith("http") ? logoUrl : `${API_BASE}${logoUrl}`;
+}
+
+async function postStoreLogo(storeId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API_BASE}/api/admin/stores/${storeId}/logo`, {
+    method: "POST",
+    headers: authHeadersMultipart(),
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = typeof data.detail === "string" ? data.detail : "Logo upload failed";
+    throw new Error(msg);
+  }
+  return data;
+}
 
 const emptyForm = {
   name: "",
@@ -29,6 +50,10 @@ export default function AdminDashboard() {
   const [editError, setEditError] = useState("");
   const [storeToDelete, setStoreToDelete] = useState(null);
   const [addSuccess, setAddSuccess] = useState(null);
+  const [addLogoFile, setAddLogoFile] = useState(null);
+  const [addLogoPreview, setAddLogoPreview] = useState(null);
+  const [editLogoFile, setEditLogoFile] = useState(null);
+  const [editLogoPreview, setEditLogoPreview] = useState(null);
 
   useEffect(() => {
     const token = getToken();
@@ -91,10 +116,33 @@ export default function AdminDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || "Failed to add company");
+      const newId = data.id;
+      if (addLogoFile && newId) {
+        try {
+          await postStoreLogo(newId, addLogoFile);
+        } catch (logoErr) {
+          setError(logoErr.message || "Company saved but logo upload failed.");
+          setAddSuccess({
+            companyId: newId,
+            customerId: data.customer_code,
+            contactPhone: data.contact_phone,
+          });
+          setForm(emptyForm);
+          setAddLogoFile(null);
+          if (addLogoPreview) URL.revokeObjectURL(addLogoPreview);
+          setAddLogoPreview(null);
+          setShowForm(false);
+          fetchStores();
+          return;
+        }
+      }
       setForm(emptyForm);
+      setAddLogoFile(null);
+      if (addLogoPreview) URL.revokeObjectURL(addLogoPreview);
+      setAddLogoPreview(null);
       setShowForm(false);
       setAddSuccess({
-        companyId: data.id,
+        companyId: newId,
         customerId: data.customer_code,
         contactPhone: data.contact_phone,
       });
@@ -114,6 +162,11 @@ export default function AdminDashboard() {
       contact_phone: s.contact_phone ?? "",
       is_active: s.is_active !== false,
       license_type: s.license_type ?? "",
+    });
+    setEditLogoFile(null);
+    setEditLogoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
     });
     setEditError("");
   };
@@ -140,7 +193,41 @@ export default function AdminDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || "Failed to update");
+      if (editLogoFile && editing) {
+        try {
+          await postStoreLogo(editing, editLogoFile);
+        } catch (logoErr) {
+          setEditError(logoErr.message || "Saved company but logo upload failed.");
+          setEditLogoFile(null);
+          if (editLogoPreview) URL.revokeObjectURL(editLogoPreview);
+          setEditLogoPreview(null);
+          fetchStores();
+          return;
+        }
+      }
       setEditing(null);
+      setEditLogoFile(null);
+      if (editLogoPreview) URL.revokeObjectURL(editLogoPreview);
+      setEditLogoPreview(null);
+      fetchStores();
+    } catch (err) {
+      setEditError(err.message);
+    }
+  };
+
+  const handleRemoveStoreLogo = async () => {
+    if (editing == null) return;
+    setEditError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/stores/${editing}/logo`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Failed to remove logo");
+      setEditLogoFile(null);
+      if (editLogoPreview) URL.revokeObjectURL(editLogoPreview);
+      setEditLogoPreview(null);
       fetchStores();
     } catch (err) {
       setEditError(err.message);
@@ -190,7 +277,14 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold text-gray-800">Admin</h1>
           <button
             type="button"
-            onClick={() => { setShowForm(true); setError(""); setForm(emptyForm); }}
+            onClick={() => {
+              setShowForm(true);
+              setError("");
+              setForm(emptyForm);
+              setAddLogoFile(null);
+              if (addLogoPreview) URL.revokeObjectURL(addLogoPreview);
+              setAddLogoPreview(null);
+            }}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
           >
             + Add company
@@ -272,13 +366,59 @@ export default function AdminDashboard() {
                 />
                 <label htmlFor="add-active" className="text-sm font-medium text-gray-700">Active</label>
               </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company logo</label>
+                <div className="flex flex-wrap items-center gap-4">
+                  {addLogoPreview && (
+                    <img src={addLogoPreview} alt="" className="h-16 w-16 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                  )}
+                  <label className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        setAddLogoFile(f || null);
+                        setAddLogoPreview((prev) => {
+                          if (prev) URL.revokeObjectURL(prev);
+                          return f ? URL.createObjectURL(f) : null;
+                        });
+                      }}
+                    />
+                    {addLogoFile ? "Change image" : "Upload logo (optional)"}
+                  </label>
+                  {addLogoFile && (
+                    <button
+                      type="button"
+                      className="text-sm text-red-600 hover:underline"
+                      onClick={() => {
+                        setAddLogoFile(null);
+                        setAddLogoPreview((prev) => {
+                          if (prev) URL.revokeObjectURL(prev);
+                          return null;
+                        });
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">JPEG, PNG, WebP or GIF, max 2 MB. Shown in the shop sidebar after staff log in.</p>
+              </div>
               <div className="sm:col-span-2 flex gap-2">
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
                   Add
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setShowForm(false); setError(""); }}
+                  onClick={() => {
+                    setShowForm(false);
+                    setError("");
+                    setAddLogoFile(null);
+                    if (addLogoPreview) URL.revokeObjectURL(addLogoPreview);
+                    setAddLogoPreview(null);
+                  }}
                   className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
                 >
                   Cancel
@@ -317,6 +457,7 @@ export default function AdminDashboard() {
               <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
                 <tr>
                   <th className="px-4 py-3 text-left">Company ID</th>
+                  <th className="px-4 py-3 text-left">Logo</th>
                   <th className="px-4 py-3 text-left">Company</th>
                   <th className="px-4 py-3 text-left">Customer ID</th>
                   <th className="px-4 py-3 text-left">Contact phone</th>
@@ -332,6 +473,17 @@ export default function AdminDashboard() {
                 {stores.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{s.id}</td>
+                    <td className="px-4 py-3">
+                      {s.logo_url ? (
+                        <img
+                          src={storeLogoSrc(s.logo_url)}
+                          alt=""
+                          className="h-10 w-10 object-contain rounded border border-gray-100 bg-gray-50"
+                        />
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-medium text-gray-900">{s.name || "—"}</td>
                     <td className="px-4 py-3 text-gray-600">{s.customer_code ?? "—"}</td>
                     <td className="px-4 py-3 text-gray-600">{s.contact_phone ?? "—"}</td>
@@ -446,9 +598,80 @@ export default function AdminDashboard() {
                     />
                     <label htmlFor="edit-active" className="text-sm font-medium text-gray-700">Active</label>
                   </div>
+                  {editing != null && (() => {
+                    const st = stores.find((x) => x.id === editing);
+                    const currentSrc = st?.logo_url ? storeLogoSrc(st.logo_url) : null;
+                    return (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Company logo</label>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(editLogoPreview || currentSrc) && (
+                            <img
+                              src={editLogoPreview || currentSrc}
+                              alt=""
+                              className="h-16 w-16 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                            />
+                          )}
+                          <label className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                setEditLogoFile(f || null);
+                                setEditLogoPreview((prev) => {
+                                  if (prev) URL.revokeObjectURL(prev);
+                                  return f ? URL.createObjectURL(f) : null;
+                                });
+                              }}
+                            />
+                            {editLogoFile ? "Change image" : "Upload / replace logo"}
+                          </label>
+                          {st?.logo_url && !editLogoPreview && (
+                            <button
+                              type="button"
+                              className="text-sm text-red-600 hover:underline"
+                              onClick={handleRemoveStoreLogo}
+                            >
+                              Remove logo
+                            </button>
+                          )}
+                          {editLogoFile && (
+                            <button
+                              type="button"
+                              className="text-sm text-gray-600 hover:underline"
+                              onClick={() => {
+                                setEditLogoFile(null);
+                                setEditLogoPreview((prev) => {
+                                  if (prev) URL.revokeObjectURL(prev);
+                                  return null;
+                                });
+                              }}
+                            >
+                              Clear new selection
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">JPEG, PNG, WebP or GIF, max 2 MB.</p>
+                      </div>
+                    );
+                  })()}
                   <div className="flex gap-2 pt-2">
                     <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
-                    <button type="button" onClick={() => { setEditing(null); setEditError(""); }} className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditing(null);
+                        setEditError("");
+                        setEditLogoFile(null);
+                        if (editLogoPreview) URL.revokeObjectURL(editLogoPreview);
+                        setEditLogoPreview(null);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </form>
               </div>

@@ -33,6 +33,13 @@ function authHeaders() {
   return headers;
 }
 
+function authHeadersMultipart() {
+  const token = getToken();
+  const headers = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
 async function handleResponse(res) {
   if (res.status === 401) {
     clearTokenAndRedirectToLogin();
@@ -68,4 +75,4 @@ export async function apiPut(url, body) {
   return handleResponse(res);
 }
 
-export { getToken, parseJwt, API_BASE, authHeaders };
+export { getToken, parseJwt, API_BASE, authHeaders, authHeadersMultipart };

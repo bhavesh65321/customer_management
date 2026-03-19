@@ -17,6 +17,7 @@ class Store(Base):
     contact_phone = Column(String(20), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     license_type = Column(String(20), nullable=True)
+    logo_url = Column(String(500), nullable=True)
 
     transactions = relationship("Transaction", back_populates="store")
     inventory_pieces = relationship("InventoryPiece", back_populates="store")

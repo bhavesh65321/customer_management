@@ -94,6 +94,8 @@ def update_store(
         store.is_active = data.is_active
     if hasattr(data, "license_type"):
         store.license_type = data.license_type
+    if hasattr(data, "logo_url"):
+        store.logo_url = data.logo_url
     db.commit()
     db.refresh(store)
     return store

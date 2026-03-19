@@ -32,6 +32,8 @@ export function calculateProductTotals(product) {
 
   return {
     ...product,
+    makingCharge,
+    diamondCharge,
     metalValue,
     gstAmount,
     total,

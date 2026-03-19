@@ -6,6 +6,7 @@ import BackButton from "./BackButton";
 import InlineError from "./InlineError";
 import { useLanguage } from "../../context/LanguageContext";
 import { authHeaders, API_BASE } from "../../api";
+import { formatDate, formatRupee } from "../../utils/format";
 
 
 const CustomerAccount = () => {
@@ -15,10 +16,13 @@ const CustomerAccount = () => {
 
   const [customer, setCustomer] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [girviLoans, setGirviLoans] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [sectionFilter, setSectionFilter] = useState("purchases");
   const [transactionId, setTransactionId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [expandedTransaction, setExpandedTransaction] = useState(null); // <-- Added state
+  const [expandedTransaction, setExpandedTransaction] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -32,11 +36,13 @@ const CustomerAccount = () => {
       try {
         setLoading(true);
         const headers = authHeaders();
-        const [customerRes, transactionsRes] = await Promise.all([
+        const [customerRes, transactionsRes, girviRes, ordersRes] = await Promise.all([
           fetch(`${API_BASE}/api/customer/${customerId}`, { headers }),
           fetch(`${API_BASE}/api/transactions/${customerId}`, { headers }),
+          fetch(`${API_BASE}/api/girvi?customer_id=${customerId}`, { headers }),
+          fetch(`${API_BASE}/api/orders?customer_id=${customerId}`, { headers }),
         ]);
-        if (customerRes.status === 401 || transactionsRes.status === 401) {
+        if (customerRes.status === 401 || transactionsRes.status === 401 || girviRes.status === 401 || ordersRes.status === 401) {
           navigate("/login");
           return;
         }
@@ -49,6 +55,10 @@ const CustomerAccount = () => {
         ]);
         setCustomer(customerData);
         setTransactions(transactionsData);
+        const girviData = girviRes.ok ? await girviRes.json() : [];
+        const ordersData = ordersRes.ok ? await ordersRes.json() : [];
+        setGirviLoans(Array.isArray(girviData) ? girviData : []);
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -57,6 +67,9 @@ const CustomerAccount = () => {
     };
     fetchData();
   }, [customerId, transactionId, navigate]);
+
+  const ordersNew = (orders || []).filter((o) => o.type === "new_order");
+  const ordersRepair = (orders || []).filter((o) => o.type === "repair");
 
   const handleEdit = (transaction) => {
     setSelectedTransaction(transaction);
@@ -297,12 +310,33 @@ const CustomerAccount = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800">{t("customer.transactionHistory")}</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{t("customer.detailedViewPurchases")}</p>
+          <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+              {["purchases", "girvi", "orders", "repairs"].map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSectionFilter(key)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    sectionFilter === key ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {key === "purchases" && t("customer.filterPurchases")}
+                  {key === "girvi" && t("customer.filterGirvi")}
+                  {key === "orders" && t("customer.filterOrders")}
+                  {key === "repairs" && t("customer.filterRepairs")}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {transactions.length === 0 ? (
+          {sectionFilter === "purchases" && (
+            <>
+              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-base font-semibold text-gray-800">{t("customer.transactionHistory")}</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{t("customer.detailedViewPurchases")}</p>
+              </div>
+              {transactions.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-gray-500">{t("customer.noTransactionsYet")}</p>
             </div>
@@ -442,6 +476,129 @@ const CustomerAccount = () => {
                 </tbody>
               </table>
             </div>
+          )}
+          </>
+          )}
+          {sectionFilter === "girvi" && (
+            <>
+              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterGirvi")}</h2>
+              </div>
+              {girviLoans.length === 0 ? (
+                <div className="p-12 text-center text-gray-500">{t("customer.noGirviFound")}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.girviDescription")}</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.girviPrincipal")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.girviStartDate")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {girviLoans.map((loan, i) => (
+                        <tr key={loan.id}>
+                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-700 max-w-xs">{loan.jewelry_description}</td>
+                          <td className="px-4 py-3 text-right font-medium">{formatRupee(loan.principal_amount)}</td>
+                          <td className="px-4 py-3 text-gray-600">{formatDate(loan.start_date)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${loan.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
+                              {loan.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+          {sectionFilter === "orders" && (
+            <>
+              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterOrders")}</h2>
+              </div>
+              {ordersNew.length === 0 ? (
+                <div className="p-12 text-center text-gray-500">{t("customer.noOrdersFound")}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderItem")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderDescription")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderExpectedDate")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.orderAmount")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {ordersNew.map((ord, i) => (
+                        <tr key={ord.id}>
+                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-700">{ord.item_description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-600 max-w-xs">{ord.description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-600">{formatDate(ord.expected_date)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${ord.status === "delivered" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                              {ord.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+          {sectionFilter === "repairs" && (
+            <>
+              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterRepairs")}</h2>
+              </div>
+              {ordersRepair.length === 0 ? (
+                <div className="p-12 text-center text-gray-500">{t("customer.noRepairsFound")}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderItem")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderDescription")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderExpectedDate")}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.orderAmount")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {ordersRepair.map((ord, i) => (
+                        <tr key={ord.id}>
+                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-700">{ord.item_description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-600 max-w-xs">{ord.description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-600">{formatDate(ord.expected_date)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${ord.status === "delivered" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                              {ord.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

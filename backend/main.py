@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from routes.auth import router as auth_router
 from routes.customer import router as customer_router
 from config.database import Base, engine
@@ -25,7 +28,13 @@ import models  # noqa: F401 - register all model tables before create_all
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
+_BACKEND_DIR = Path(__file__).resolve().parent
+_UPLOADS_DIR = _BACKEND_DIR / "uploads"
+_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+(_UPLOADS_DIR / "store_logos").mkdir(parents=True, exist_ok=True)
+
 app = FastAPI()
+app.mount("/uploads", StaticFiles(directory=str(_UPLOADS_DIR)), name="uploads")
 
 # Enable CORS for frontend
 app.add_middleware(

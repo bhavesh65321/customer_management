@@ -16,10 +16,12 @@ class Product(BaseModel):
     total: float
 
     @validator(
-        "weight", "rate", "makingCharge", "diamondCharge", 
+        "weight", "rate", "makingCharge", "diamondCharge",
         "gstPercent", "metalValue", "gstAmount", "total", pre=True
     )
     def convert_str_to_float(cls, v):
+        if v == "" or v is None:
+            return 0.0
         return float(v)
 
 class TransactionCreate(BaseModel):
