@@ -80,7 +80,10 @@ def _run_migrations():
         log_app_event("error", "migrations_failed", error=str(exc))
         raise
 
-_run_migrations()
+# _run_migrations()
+
+# Auto create all tables for fresh deployments
+Base.metadata.create_all(bind=engine)
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _UPLOADS_DIR = _BACKEND_DIR / "uploads"
