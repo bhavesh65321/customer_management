@@ -83,7 +83,19 @@ def _run_migrations():
 # _run_migrations()
 
 # Auto create all tables for fresh deployments
-Base.metadata.create_all(bind=engine)
+#Base.metadata.create_all(bind=engine)
+
+from sqlalchemy import text
+
+with engine.connect() as conn:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            email VARCHAR(100),
+            hashed_password VARCHAR(255)
+        )
+    """))
+    conn.commit()
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _UPLOADS_DIR = _BACKEND_DIR / "uploads"
