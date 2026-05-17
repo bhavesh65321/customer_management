@@ -1,6 +1,7 @@
 from pydantic import BaseModel, validator, model_validator
 from typing import List, Optional
 from datetime import datetime
+from schemas.gst_schema import GSTLineInput
 
 
 class Product(BaseModel):
@@ -10,10 +11,12 @@ class Product(BaseModel):
     rate: float
     makingCharge: float
     diamondCharge: float
-    gstPercent: float
+    gstPercent: Optional[float] = 0.0   # optional — GST handled by GSTLineInput
     metalValue: float
-    gstAmount: float
+    gstAmount: Optional[float] = 0.0    # optional — GST handled by GSTLineInput
     total: float
+    pieceId: Optional[int] = None
+    qty: Optional[float] = 1.0          # quantity field added in frontend
 
     @validator(
         "weight", "rate", "makingCharge", "diamondCharge",
@@ -34,6 +37,7 @@ class TransactionCreate(BaseModel):
     date: datetime
     billType: Optional[str] = None
     billPhotoUrl: Optional[str] = None
+    gst: Optional[GSTLineInput] = None   # ← optional GST data from billing screen
 
     @model_validator(mode="after")
     def paid_due_equal_grand_total(self):
@@ -71,6 +75,8 @@ class TransactionUpdate(BaseModel):
     dueAmount: float
     grandTotal: float
     date: datetime
+    billType: Optional[str] = None
+    payment_mode: Optional[str] = None
 
 
     class Config:

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import BackButton from "../components/ui/BackButton";
 import { API_BASE } from "../api";
+import InlineError from "../components/ui/InlineError";
+import { Button } from "../components/ui/Button";
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -105,13 +107,10 @@ export default function ResetPassword() {
               minLength={1}
             />
           </div>
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
-          >
+          {error && <InlineError message={error} onDismiss={() => setError("")} />}
+          <Button type="submit" size="full">
             Reset password
-          </button>
+          </Button>
           <p className="text-center text-sm mt-4">
             <Link to="/login" className="text-blue-500 hover:underline">
               Back to Login

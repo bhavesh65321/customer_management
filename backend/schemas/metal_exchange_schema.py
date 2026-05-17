@@ -12,6 +12,7 @@ class MetalExchangeCreate(BaseModel):
     pure_weight: Optional[float] = None
     cash_amount: Optional[float] = None
     making_charges: Optional[float] = None
+    rate_per_gram: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -26,6 +27,7 @@ class MetalExchangeResponse(BaseModel):
     pure_weight: Optional[float] = None
     cash_amount: Optional[float] = None
     making_charges: Optional[float] = None
+    rate_per_gram: Optional[float] = None
     notes: Optional[str] = None
     exchange_date: Optional[datetime] = None
     created_at: Optional[datetime] = None

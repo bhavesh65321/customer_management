@@ -17,8 +17,22 @@ class Order(Base):
     status = Column(String(30), nullable=False, default="pending")
     delivered_at = Column(DateTime, nullable=True)
     amount_charged = Column(Float, nullable=True)
+    karigar_id = Column(Integer, ForeignKey("karigars.id"), nullable=True, index=True)
+    workflow_step = Column(String(80), nullable=True)
+    # Workflow template reference
+    workflow_template_id = Column(Integer, ForeignKey("workflow_templates.id"), nullable=True)
+    # Advance received at order time
+    advance_cash = Column(Float, nullable=True)
+    advance_metal_weight = Column(Float, nullable=True)
+    advance_metal_purity = Column(Float, nullable=True)
+    advance_metal_type = Column(String(20), nullable=True)  # gold / silver
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     customer = relationship("Customer", back_populates="orders")
     store = relationship("Store", back_populates="orders")
+    karigar = relationship("Karigar", back_populates="orders")
+    piece_events = relationship("PieceLifecycleEvent", back_populates="order")
+    order_steps = relationship("OrderStep", foreign_keys="OrderStep.order_id",
+                               primaryjoin="Order.id == OrderStep.order_id",
+                               order_by="OrderStep.step_order", cascade="all, delete-orphan")

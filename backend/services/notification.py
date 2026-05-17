@@ -3,6 +3,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+from typing import Optional
 
 
 def _format_date(dt):
@@ -11,6 +12,42 @@ def _format_date(dt):
     if isinstance(dt, datetime):
         return dt.strftime("%d-%b-%Y %I:%M %p")
     return str(dt)
+
+
+def normalize_phone_e164(phone: str) -> Optional[str]:
+    if not phone or not str(phone).strip():
+        return None
+    to_number = str(phone).strip()
+    if not to_number.startswith("+"):
+        to_number = "+91" + to_number.lstrip("0")
+    return to_number
+
+
+def twilio_whatsapp_configured() -> bool:
+    wa = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
+    sid = os.getenv("TWILIO_ACCOUNT_SID")
+    token = os.getenv("TWILIO_AUTH_TOKEN")
+    return bool(wa and sid and token and wa.startswith("whatsapp:"))
+
+
+def send_whatsapp_twilio(to_phone: str, body: str) -> bool:
+    if not twilio_whatsapp_configured():
+        return False
+    sid = os.getenv("TWILIO_ACCOUNT_SID")
+    token = os.getenv("TWILIO_AUTH_TOKEN")
+    wa_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
+    to_e164 = normalize_phone_e164(to_phone)
+    if not to_e164:
+        return False
+    to_whatsapp = f"whatsapp:{to_e164}"
+    try:
+        from twilio.rest import Client
+
+        client = Client(sid, token)
+        client.messages.create(body=body, from_=wa_from, to=to_whatsapp)
+        return True
+    except Exception:
+        return False
 
 
 def send_purchase_order_email(
@@ -76,14 +113,40 @@ def send_purchase_order_sms(
     )
     try:
         from twilio.rest import Client
+
         client = Client(sid, token)
-        to_number = phone.strip()
-        if not to_number.startswith("+"):
-            to_number = "+91" + to_number.lstrip("0")
+        to_number = normalize_phone_e164(phone)
+        if not to_number:
+            return False
         client.messages.create(body=message, from_=from_number, to=to_number)
         return True
     except Exception:
         return False
+
+
+def send_purchase_order_whatsapp(
+    phone: str,
+    transaction_id: int,
+    grand_total: float,
+) -> bool:
+    body = (
+        f"Your purchase order #{transaction_id} for ₹{grand_total:.2f} has been recorded. Thank you!"
+    )
+    return send_whatsapp_twilio(phone, body)
+
+
+def _notify_customer_push(customer_id: int, title: str, body: str) -> int:
+    from config.database import SessionLocal
+    from models.push_token import PushToken
+    from services.push import send_fcm_multicast
+
+    db = SessionLocal()
+    try:
+        rows = db.query(PushToken.token).filter(PushToken.customer_id == customer_id).all()
+        tokens = [r[0] for r in rows]
+        return send_fcm_multicast(tokens, title, body, data={"type": "purchase"})
+    finally:
+        db.close()
 
 
 def send_purchase_order_notifications(
@@ -96,6 +159,7 @@ def send_purchase_order_notifications(
     grand_total: float,
     paid_amount: float,
     due_amount: float,
+    customer_id: Optional[int] = None,
 ):
     products_summary_lines = []
     for i, p in enumerate(products_list or [], 1):
@@ -126,6 +190,18 @@ def send_purchase_order_notifications(
             transaction_id=transaction_id,
             grand_total=grand_total,
         )
+    if customer_phone and customer_phone.strip() and twilio_whatsapp_configured():
+        send_whatsapp = os.getenv("NOTIFY_WHATSAPP_ON_PURCHASE", "1").lower() not in ("0", "false", "no")
+        if send_whatsapp:
+            send_purchase_order_whatsapp(customer_phone, transaction_id, grand_total)
+    if customer_id:
+        push = os.getenv("NOTIFY_PUSH_ON_PURCHASE", "1").lower() not in ("0", "false", "no")
+        if push:
+            _notify_customer_push(
+                customer_id,
+                f"Purchase #{transaction_id}",
+                f"Thank you. Total ₹{grand_total:.2f} (Paid ₹{paid_amount:.2f}, Due ₹{due_amount:.2f})",
+            )
 
 
 def send_payment_reminder_email(to_email: str, customer_name: str, total_due: float, bill_count: int) -> bool:
@@ -170,11 +246,36 @@ def send_payment_reminder_sms(phone: str, customer_name: str, total_due: float) 
     message = f"Hi {customer_name}, your outstanding balance is ₹{total_due:.2f}. Please clear at your earliest."
     try:
         from twilio.rest import Client
+
         client = Client(sid, token)
-        to_number = phone.strip()
-        if not to_number.startswith("+"):
-            to_number = "+91" + to_number.lstrip("0")
+        to_number = normalize_phone_e164(phone)
+        if not to_number:
+            return False
         client.messages.create(body=message, from_=from_number, to=to_number)
         return True
     except Exception:
         return False
+
+
+def send_payment_reminder_whatsapp(phone: str, customer_name: str, total_due: float) -> bool:
+    body = f"Hi {customer_name}, your outstanding balance is ₹{total_due:.2f}. Please clear at your earliest. — Jewellery store"
+    return send_whatsapp_twilio(phone, body)
+
+
+def notify_customer_payment_reminder_push(customer_id: int, total_due: float, bill_count: int) -> int:
+    from config.database import SessionLocal
+    from models.push_token import PushToken
+    from services.push import send_fcm_multicast
+
+    db = SessionLocal()
+    try:
+        rows = db.query(PushToken.token).filter(PushToken.customer_id == customer_id).all()
+        tokens = [r[0] for r in rows]
+        return send_fcm_multicast(
+            tokens,
+            "Payment reminder",
+            f"Outstanding ₹{total_due:.2f} across {bill_count} bill(s).",
+            data={"type": "payment_reminder"},
+        )
+    finally:
+        db.close()

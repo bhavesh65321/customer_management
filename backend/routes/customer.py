@@ -1,17 +1,24 @@
+import logging
 from datetime import datetime, timedelta
 import secrets
+from io import BytesIO
+
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from models.customer import Customer
 from models.customer_invite import CustomerInvite
 from schemas.customer import CustomerCreate, CustomerResponse
 from config.database import get_db
-from dependencies import require_staff, get_token_payload
+from dependencies import require_staff, require_manager, get_token_payload
 from typing import List, Optional
+from utils.activity import log_activity
+from core.db_filters import resolve_write_store_id
 
 
 router = APIRouter(tags=["Customers"])
+logger = logging.getLogger(__name__)
 
 
 def _normalize_phone(s: str) -> str:
@@ -21,24 +28,25 @@ def _normalize_phone(s: str) -> str:
 
 
 def _store_filter(q, payload):
+    """Filter customers to the requesting user's store. Admins see all."""
+    from sqlalchemy import false as sql_false
     store_id = payload.get("store_id")
+    role = payload.get("role", "staff")
     if store_id is not None:
-        q = q.filter(Customer.store_id == store_id)
-    else:
-        q = q.filter(Customer.store_id.is_(None))
-    return q
+        return q.filter(Customer.store_id == store_id)
+    if role == "admin":
+        return q  # admin sees all customers
+    return q.filter(sql_false())  # misconfigured account → see nothing
 
 
-@router.post("/add", response_model=CustomerResponse, include_in_schema=True)
+@router.post("/add", response_model=CustomerResponse, status_code=201, include_in_schema=True)
 def add_customer(
     customer: CustomerCreate,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
     try:
-        store_id = payload.get("store_id")
-        if store_id is None:
-            raise HTTPException(status_code=403, detail="Store required")
+        store_id = resolve_write_store_id(payload, db)
         norm_phone = _normalize_phone(customer.primary_phone)
         if norm_phone:
             q = db.query(Customer).filter(Customer.store_id == store_id, Customer.is_active == True)
@@ -69,9 +77,21 @@ def add_customer(
         db.add(new_customer)
         db.commit()
         db.refresh(new_customer)
+        log_activity(
+            db,
+            payload,
+            action="created",
+            entity_type="customer",
+            entity_id=str(new_customer.id),
+            message=f"Added customer: {new_customer.name}",
+        )
         return new_customer
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
+        logger.exception("add_customer failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -88,15 +108,15 @@ def _cell_value(cell):
 def import_customers_excel(
     file: UploadFile,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),  # ⚠️ manager+ only
 ):
+    store_id = resolve_write_store_id(payload, db)
     if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
         raise HTTPException(status_code=400, detail="Upload an Excel file (.xlsx)")
     try:
         from openpyxl import load_workbook
     except ImportError:
         raise HTTPException(status_code=500, detail="Excel support not installed (openpyxl)")
-    store_id = payload.get("store_id")
     try:
         wb = load_workbook(filename=file.file, read_only=True, data_only=True)
         sheet = wb.active
@@ -122,6 +142,27 @@ def import_customers_excel(
         }
     email_col = col_index.get("email")
     address_col = col_index.get("address")
+    father_col = col_index.get("father_name") or col_index.get("father") or col_index.get("father's_name")
+    city_col = col_index.get("city")
+    pin_col = col_index.get("pincode") or col_index.get("postal_code") or col_index.get("zip")
+    gender_col = col_index.get("gender")
+    country_col = col_index.get("country")
+    secondary_col = col_index.get("secondary_phone") or col_index.get("alt_phone") or col_index.get("alternate_phone")
+
+    existing = (
+        db.query(Customer.primary_phone, Customer.email)
+        .filter(Customer.store_id == store_id, Customer.is_active == True)
+        .all()
+    )
+    seen_phones = set()
+    seen_emails = set()
+    for p, em in existing:
+        np = _normalize_phone(p or "")
+        if np:
+            seen_phones.add(np)
+        if em and str(em).strip():
+            seen_emails.add(str(em).strip().lower())
+
     imported = 0
     errors = []
     for row_idx, row in enumerate(rows[1:], start=2):
@@ -142,33 +183,57 @@ def import_customers_excel(
         address = cells[address_col] if address_col is not None and address_col < len(cells) and cells[address_col] else None
         if address:
             address = str(address).strip()
+        father_name = cells[father_col] if father_col is not None and father_col < len(cells) and cells[father_col] else None
+        if father_name:
+            father_name = str(father_name).strip() or None
+        city = cells[city_col] if city_col is not None and city_col < len(cells) and cells[city_col] else None
+        if city:
+            city = str(city).strip() or None
+        pincode = cells[pin_col] if pin_col is not None and pin_col < len(cells) and cells[pin_col] else None
+        if pincode is not None:
+            pincode = str(pincode).strip() or None
+        gender = cells[gender_col] if gender_col is not None and gender_col < len(cells) and cells[gender_col] else None
+        if gender:
+            gender = str(gender).strip() or None
+        country = cells[country_col] if country_col is not None and country_col < len(cells) and cells[country_col] else None
+        if country:
+            country = str(country).strip() or None
+        secondary_phone = cells[secondary_col] if secondary_col is not None and secondary_col < len(cells) and cells[secondary_col] else None
+        if secondary_phone:
+            secondary_phone = str(secondary_phone).strip() or None
+
         norm_phone = _normalize_phone(phone)
         if not norm_phone:
             errors.append(f"Row {row_idx}: Invalid phone")
             continue
-        dup = db.query(Customer).filter(Customer.store_id == store_id, Customer.is_active == True).all()
-        if any(_normalize_phone(c.primary_phone) == norm_phone for c in dup):
+        if norm_phone in seen_phones:
             errors.append(f"Row {row_idx}: Phone already exists in store")
             continue
-        if email and email.strip():
-            if db.query(Customer).filter(
-                Customer.store_id == store_id,
-                Customer.email == email.strip(),
-                Customer.is_active == True,
-            ).first():
-                errors.append(f"Row {row_idx}: Email already exists in store")
-                continue
+        email_lower = email.strip().lower() if email and email.strip() else None
+        if email_lower and email_lower in seen_emails:
+            errors.append(f"Row {row_idx}: Email already exists in store")
+            continue
         try:
             new_customer = Customer(
                 name=name,
+                father_name=father_name,
                 primary_phone=phone,
+                secondary_phone=secondary_phone,
                 email=email or None,
                 address=address or None,
+                city=city,
+                pincode=pincode,
+                gender=gender,
+                country=country,
                 store_id=store_id,
             )
             db.add(new_customer)
             db.commit()
+            db.refresh(new_customer)
             imported += 1
+            seen_phones.add(norm_phone)
+            if email_lower:
+                seen_emails.add(email_lower)
         except Exception as e:
             db.rollback()
             errors.append(f"Row {row_idx}: {str(e)}")
@@ -220,10 +285,22 @@ def update_customer(
 
         db.commit()
         db.refresh(customer)
+        log_activity(
+            db,
+            payload,
+            action="updated",
+            entity_type="customer",
+            entity_id=str(customer_id),
+            message=f"Updated customer: {customer.name}",
+        )
         return customer
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
+        logger.exception("update_customer failed")
         raise HTTPException(status_code=500, detail=str(e))
     
 
@@ -257,42 +334,122 @@ def get_all_customers(
 @router.get("/list", response_model=List[CustomerResponse])
 def list_customers(
     search: Optional[str] = Query(None),
-    filter: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, description="active, inactive, or all"),
     sort: Optional[str] = Query(None),
+    # ── Pagination (BE-01) ─────────────────────────────────────────────────
+    # page=0 (default) keeps legacy behaviour — returns ALL records so
+    # existing frontend calls without pagination still work unchanged.
+    page: int = Query(0, ge=0, description="1-based page number. 0 = return all (legacy)"),
+    page_size: int = Query(50, ge=1, le=500, description="Items per page (max 500)"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
     query = db.query(Customer)
     query = _store_filter(query, payload)
 
-    if search:
+    if status == "inactive":
+        query = query.filter(Customer.is_active == False)
+    elif status != "all":
+        query = query.filter(Customer.is_active == True)
+
+    term = (search or "").strip()
+    if term:
+        like = f"%{term}%"
         query = query.filter(
             or_(
-                Customer.name.ilike(f"%{search}%"),
-                Customer.primary_phone.ilike(f"%{search}%"),
+                Customer.name.ilike(like),
+                Customer.primary_phone.ilike(like),
+                Customer.city.ilike(like),
+                Customer.email.ilike(like),
             )
         )
 
-    # Filter by status when model supports it (e.g. paid/due from transactions)
-    # if filter in ["paid", "due"]:
-    #     query = query.filter(Customer.status == filter)
-
-    # Sorting
     if sort == "name":
         query = query.order_by(Customer.name.asc())
     elif sort == "recent":
         query = query.order_by(Customer.id.desc())
     elif sort == "oldest":
         query = query.order_by(Customer.id.asc())
+    else:
+        query = query.order_by(Customer.id.desc())
 
+    total = query.count()
+
+    if page > 0:
+        # Paginated mode
+        items = query.offset((page - 1) * page_size).limit(page_size).all()
+        import math
+        headers = {
+            "X-Total-Count": str(total),
+            "X-Page": str(page),
+            "X-Page-Size": str(page_size),
+            "X-Total-Pages": str(math.ceil(total / page_size) if total else 0),
+            "Access-Control-Expose-Headers": "X-Total-Count, X-Page, X-Page-Size, X-Total-Pages",
+        }
+        return JSONResponse(
+            content=[item.model_dump() if hasattr(item, "model_dump") else
+                     {c.name: getattr(item, c.name) for c in item.__table__.columns}
+                     for item in items],
+            headers=headers,
+        )
+
+    # Legacy mode (page=0): return all, same as before
     return query.all()
+
+
+@router.get("/import-template")
+def download_customer_import_template():
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Excel support not installed (openpyxl)")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Customers"
+    headers = [
+        "Name",
+        "Phone",
+        "Email",
+        "Address",
+        "Father Name",
+        "City",
+        "Pincode",
+        "Gender",
+        "Country",
+        "Secondary Phone",
+    ]
+    ws.append(headers)
+    ws.append(
+        [
+            "Example Customer",
+            "9876543210",
+            "customer@example.com",
+            "123 Main Street",
+            "Father name",
+            "Mumbai",
+            "400001",
+            "Male",
+            "India",
+            "9876543211",
+        ]
+    )
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="customers-import-template.xlsx"',
+        },
+    )
 
 
 @router.post("/invite/{customer_id}")
 def create_invite(
     customer_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),  # ⚠️ manager+ only
 ):
     q = db.query(Customer).filter(Customer.id == customer_id)
     q = _store_filter(q, payload)
@@ -318,28 +475,24 @@ def create_invite(
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-async def get_customer(
+def get_customer(
     customer_id: int,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
-    try:
-        q = db.query(Customer).filter(Customer.id == customer_id)
-        q = _store_filter(q, payload)
-        customer = q.first()
-        if not customer:
-            raise HTTPException(status_code=404, detail="Customer not found")
-        return customer
-    except Exception as e:
-        print("❌ Error fetching customer:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    q = db.query(Customer).filter(Customer.id == customer_id)
+    q = _store_filter(q, payload)
+    customer = q.first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return customer
     
 
 @router.delete("/delete/{customer_id}")
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),  # ⚠️ manager+ only
 ):
     q = db.query(Customer).filter(Customer.id == customer_id)
     q = _store_filter(q, payload)

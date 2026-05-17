@@ -2,11 +2,9 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import BackButton from "../ui/BackButton";
 import LanguageSwitcher from "../ui/LanguageSwitcher";
+import FeedbackWidget from "../ui/FeedbackWidget";
 import {
-  ChartBarIcon,
-  UsersIcon,
-  ShoppingCartIcon,
-  CalendarIcon,
+  // ChartBarIcon, UsersIcon, ShoppingCartIcon, CalendarIcon — reserved for future nav items
   Bars3Icon,
   XMarkIcon,
   ChevronLeftIcon,
@@ -32,7 +30,10 @@ export default function ShopLayout({ children }) {
   const token = getToken();
   const payload = token ? parseJwt(token) : null;
   const isAdmin = payload?.role === "admin";
+  const isSuperAdmin = payload?.role === "superadmin";
   const storeId = payload?.store_id;
+  const userName = payload?.name || payload?.sub?.split("@")[0] || null;
+  const userRole = payload?.role || "staff";
 
   useEffect(() => {
     if (!storeId) return;
@@ -72,50 +73,57 @@ export default function ShopLayout({ children }) {
 
   const SidebarContent = ({ onClickLink, collapsed }) => (
     <div className="h-full flex flex-col bg-white flex-1 min-h-0">
-      <div className={`p-4 shrink-0 border-b border-gray-100 ${collapsed ? "flex justify-center" : ""}`}>
+      <div className={`shrink-0 border-b border-gray-100 ${collapsed ? "p-3 flex justify-center" : "px-4 pt-5 pb-4"}`}>
         {collapsed ? (
-          <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0">
             {shopLogo ? (
               <img src={shopLogo} alt="" className="w-full h-full object-contain" />
             ) : (
-              <span className="text-gray-400 text-xs">{t("common.logo")}</span>
+              <span className="text-gray-400 text-xs font-bold">{(displayName || "?")[0].toUpperCase()}</span>
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0">
-                {shopLogo ? (
-                  <img src={shopLogo} alt="" className="w-full h-full object-contain" />
-                ) : (
-                  <span className="text-gray-400 text-xs">{t("common.logo")}</span>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="font-semibold text-gray-900 truncate block">{displayName}</span>
-                {!isCompanyUser && (
-                  <label className="text-xs text-blue-600 hover:text-blue-700 cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target?.files?.[0];
-                        if (file) {
-                          const r = new FileReader();
-                          r.onload = () => {
-                            const result = r.result;
-                            localStorage.setItem("shopLogo", result);
-                            setShopLogo(result);
-                          };
-                          r.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                    {t("common.uploadLogo")}
-                  </label>
-                )}
-              </div>
+          <div className="flex flex-col items-center gap-2 text-center">
+            {/* logo — extra large, centered */}
+            <div className="w-28 h-28 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+              {shopLogo ? (
+                <img src={shopLogo} alt="" className="w-full h-full object-contain" />
+              ) : (
+                <span className="text-5xl font-extrabold text-blue-400 select-none">
+                  {(displayName || "?")[0].toUpperCase()}
+                </span>
+              )}
+            </div>
+            {/* name + role stacked below */}
+            <div className="min-w-0 w-full">
+              <p className="font-bold text-gray-900 truncate text-sm leading-tight">{displayName}</p>
+              {userName && (
+                <p className="text-xs text-gray-400 truncate capitalize mt-0.5">
+                  {userName} · {userRole}
+                </p>
+              )}
+              {!isCompanyUser && (
+                <label className="text-xs text-blue-600 hover:text-blue-700 cursor-pointer mt-1 block">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target?.files?.[0];
+                      if (file) {
+                        const r = new FileReader();
+                        r.onload = () => {
+                          const result = r.result;
+                          localStorage.setItem("shopLogo", result);
+                          setShopLogo(result);
+                        };
+                        r.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  {t("common.uploadLogo")}
+                </label>
+              )}
             </div>
             {!isCompanyUser && (
               <input
@@ -160,11 +168,11 @@ export default function ShopLayout({ children }) {
             </div>
           </div>
         ))}
-        {isAdmin && (
+        {isSuperAdmin && (
           <>
             {!collapsed && (
               <p className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                {t("menu.admin")}
+                Platform
               </p>
             )}
             <Link
@@ -173,19 +181,37 @@ export default function ShopLayout({ children }) {
               className={`flex items-center rounded-lg hover:bg-gray-50 transition ${
                 collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
               }`}
-              title={collapsed ? t("menu.admin") : undefined}
+              title={collapsed ? "Platform Admin" : undefined}
             >
               <ShieldCheckIcon className="h-6 w-6 text-blue-600 shrink-0" />
-              {!collapsed && <span className="font-medium text-gray-700">{t("menu.admin")}</span>}
+              {!collapsed && <span className="font-medium text-gray-700">Platform Admin</span>}
             </Link>
           </>
         )}
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem("token");
+            localStorage.removeItem("shopName");
+            localStorage.removeItem("shopLogo");
+            window.location.href = "/login";
+          }}
+          className={`flex items-center w-full rounded-lg hover:bg-red-50 text-red-500 transition mt-2 ${
+            collapsed ? "justify-center p-2.5" : "space-x-3 px-3 py-2.5"
+          }`}
+          title={collapsed ? "Logout" : undefined}
+        >
+          <span className="text-xl">🚪</span>
+          {!collapsed && <span className="font-medium">Logout</span>}
+        </button>
       </nav>
     </div>
   );
 
   return (
-    <div className="flex min-h-screen min-h-[100dvh] bg-gray-50">
+    <div className="flex min-h-[100dvh] bg-gray-50">
       {/* Desktop Sidebar */}
       <div
         className={`hidden md:flex flex-col bg-white border-r border-gray-200 transition-all duration-200 shrink-0 ${
@@ -248,18 +274,19 @@ export default function ShopLayout({ children }) {
           <span className="font-bold text-gray-900 truncate flex-1 min-w-0 text-center">{displayName}</span>
           <div className="shrink-0 flex items-center gap-2">
             <LanguageSwitcher />
-            <BackButton className="text-gray-600" label={t("common.back")} />
+            <BackButton to="/home" className="text-gray-600" label={t("common.back")} />
           </div>
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto p-4 md:p-6 bg-gray-50">
           <div className="hidden md:flex md:items-center md:justify-between md:mb-4">
-            <BackButton label={t("common.back")} />
+            <BackButton to="/home" label={t("common.back")} />
             <LanguageSwitcher />
           </div>
           {children}
         </main>
       </div>
+      <FeedbackWidget />
     </div>
   );
 }

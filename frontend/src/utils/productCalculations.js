@@ -1,12 +1,22 @@
 export const INITIAL_PRODUCT = {
   productName: "",
   metalType: "gold",
+  qty: "1",
   weight: "",
   rate: "",
   makingCharge: "",
   diamondCharge: "",
-  gstPercent: "3",
+  pieceId: "",
 };
+
+/** Returns a fresh product object with a stable unique key for React rendering. */
+export function createProduct(overrides = {}) {
+  return {
+    ...INITIAL_PRODUCT,
+    _uid: typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    ...overrides,
+  };
+}
 
 export function parseNumber(value) {
   const n = parseFloat(value);
@@ -23,19 +33,17 @@ export function calculateProductTotals(product) {
   const rate = parseNumber(product.rate);
   const makingCharge = parseNumber(product.makingCharge);
   const diamondCharge = parseNumber(product.diamondCharge);
-  const gstPercent = parseNumber(product.gstPercent);
 
   const metalValue = weight * rate;
-  const taxableAmount = metalValue + makingCharge;
-  const gstAmount = (taxableAmount * gstPercent) / 100;
-  const total = metalValue + makingCharge + diamondCharge + gstAmount;
+  // GST is handled separately by GSTPanel — no per-item GST in product total
+  const total = metalValue + makingCharge + diamondCharge;
 
   return {
     ...product,
     makingCharge,
     diamondCharge,
     metalValue,
-    gstAmount,
+    gstAmount: 0,
     total,
   };
 }

@@ -1,583 +1,680 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import ShopLayout from "../components/layout/ShopLayout";
-import CustomerSelectWithAdd from "../components/ui/CustomerSelectWithAdd";
 import { API_BASE, authHeaders } from "../api";
-import { useLanguage } from "../context/LanguageContext";
+import { parseApiError } from "../utils/apiError";
+import { Spinner } from "../components/ui/Spinner";
 
-function normalizePhone(s) {
-  if (s == null || s === "") return "";
-  return String(s).replace(/\D/g, "");
+// ── Helpers ────────────────────────────────────────────────────────────────
+const fmt = (n) =>
+  Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmtMoney = (n) => `₹${fmt(n)}`;
+const fmtDate = (s) =>
+  s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDT = (s) =>
+  s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+
+function daysOld(dateStr) {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr)) / 86400000);
 }
+const ageLabel = (d) =>
+  d < 30 ? `${d}d` : d < 365 ? `${Math.floor(d / 30)}m ${d % 30}d` : `${Math.floor(d / 365)}y`;
+const ageBadgeCls = (d) =>
+  d >= 60
+    ? "bg-red-100 text-red-700 border border-red-200"
+    : d >= 20
+    ? "bg-amber-100 text-amber-700 border border-amber-200"
+    : "bg-green-100 text-green-700 border border-green-200";
 
-function customerMatchesPhoneQuery(customer, queryDigits) {
-  if (!queryDigits) return false;
-  const p1 = normalizePhone(customer.primary_phone);
-  const p2 = normalizePhone(customer.secondary_phone);
-  return (
-    p1.includes(queryDigits) ||
-    p2.includes(queryDigits) ||
-    p1.endsWith(queryDigits) ||
-    p2.endsWith(queryDigits)
-  );
-}
-
-const TAB_IDS = ["record", "outstanding", "history"];
-
-export default function PaymentsPage() {
-  const { t } = useLanguage();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tabFromUrl = searchParams.get("tab") || "record";
-  const [activeTab, setActiveTab] = useState(
-    TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "record"
-  );
-  const [outstanding, setOutstanding] = useState({ items: [], totalDue: 0, count: 0 });
-  const [history, setHistory] = useState([]);
-  const [loadingOutstanding, setLoadingOutstanding] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [recordLookupMode, setRecordLookupMode] = useState("bill");
-  const [recordCustomerId, setRecordCustomerId] = useState("");
-  const [phoneSearch, setPhoneSearch] = useState("");
-  const [phonePickCustomerId, setPhonePickCustomerId] = useState("");
-  const [phoneMatchedIds, setPhoneMatchedIds] = useState([]);
-  const [recordTransactionId, setRecordTransactionId] = useState("");
-  const [recordAmount, setRecordAmount] = useState("");
-  const [recordMode, setRecordMode] = useState("Cash");
-  const [recordSubmitting, setRecordSubmitting] = useState(false);
-  const [recordError, setRecordError] = useState(null);
-  const [recordSuccess, setRecordSuccess] = useState(false);
-  const navigate = useNavigate();
-
-  const tabLabels = {
-    record: t("payments.recordPayment"),
-    outstanding: t("payments.outstandingBalance"),
-    history: t("payments.paymentHistory"),
-  };
+// ── Reminder Modal ─────────────────────────────────────────────────────────
+function ReminderModal({ customer, onClose, onSent }) {
+  const [channel, setChannel] = useState("whatsapp");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    const t0 = searchParams.get("tab") || "record";
-    if (TAB_IDS.includes(t0)) setActiveTab(t0);
-  }, [searchParams]);
+    if (!customer) return;
+    setDone(false);
+    setChannel("whatsapp");
+    const bills = customer.bills ? customer.bills.length : 1;
+    setMessage(
+      `Namaste ${customer.customerName},\n\nYour payment of ${fmtMoney(customer.totalDue)} is pending` +
+        ` (${bills} bill${bills > 1 ? "s" : ""}).\n\nPlease visit us at your earliest convenience.\n\nThank you,\nKC Jewellers`
+    );
+  }, [customer]);
 
-  const switchTab = (id) => {
-    setActiveTab(id);
-    setSearchParams(id === "record" ? {} : { tab: id });
-  };
+  if (!customer) return null;
 
-  const loadOutstanding = () => {
-    setLoadingOutstanding(true);
-    fetch(`${API_BASE}/api/payments/outstanding`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : { items: [], totalDue: 0, count: 0 }))
-      .then((data) => setOutstanding(data))
-      .catch(() => setOutstanding({ items: [], totalDue: 0, count: 0 }))
-      .finally(() => setLoadingOutstanding(false));
-  };
-
-  useEffect(() => {
-    loadOutstanding();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== "outstanding") return;
-    loadOutstanding();
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "history") return;
-    setLoadingHistory(true);
-    fetch(`${API_BASE}/api/payments/history`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setHistory)
-      .catch(() => setHistory([]))
-      .finally(() => setLoadingHistory(false));
-  }, [activeTab]);
-
-  const billsForRecordCustomer = useMemo(() => {
-    const items = outstanding.items || [];
-    if (recordLookupMode !== "customer" || !recordCustomerId) return [];
-    return items.filter((row) => String(row.customerId) === String(recordCustomerId));
-  }, [outstanding.items, recordLookupMode, recordCustomerId]);
-
-  const billsForPhoneCustomer = useMemo(() => {
-    const items = outstanding.items || [];
-    const cid = phonePickCustomerId;
-    if (recordLookupMode !== "phone" || !cid) return [];
-    return items.filter((row) => String(row.customerId) === String(cid));
-  }, [outstanding.items, recordLookupMode, phonePickCustomerId]);
-
-  const runPhoneLookup = async () => {
-    setRecordError(null);
-    setPhoneMatchedIds([]);
-    setPhonePickCustomerId("");
-    const q = normalizePhone(phoneSearch);
-    if (!q || q.length < 4) {
-      setRecordError(t("payments.enterPhone"));
+  const handleWhatsApp = () => {
+    const rawPhone = customer.phone || customer.primary_phone || customer.customerPhone || "";
+    const phone = rawPhone.replace(/\D/g, "");
+    if (!phone) {
+      alert("No phone number on record for this customer. Please update their profile.");
       return;
     }
-    const res = await fetch(`${API_BASE}/api/customer/all`, { headers: authHeaders() });
-    const list = res.ok ? await res.json() : [];
-    const customers = Array.isArray(list) ? list : [];
-    const matched = customers.filter((c) => customerMatchesPhoneQuery(c, q));
-    const ids = matched.map((c) => String(c.id));
-    setPhoneMatchedIds(ids);
-    if (ids.length === 0) {
-      setRecordError(t("payments.noCustomerForPhone"));
-    } else if (ids.length === 1) {
-      setPhonePickCustomerId(ids[0]);
-    }
+    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
+    setDone(true);
+    setTimeout(() => { onSent && onSent(); onClose(); }, 1500);
   };
 
-  const handleRecordPayment = async (e) => {
-    e.preventDefault();
-    setRecordError(null);
-    setRecordSuccess(false);
-    const txnId = parseInt(recordTransactionId, 10);
-    const amount = parseFloat(recordAmount);
-    if (!txnId || txnId < 1 || !amount || amount <= 0) {
-      setRecordError("Enter a valid bill number and amount.");
-      return;
-    }
-    setRecordSubmitting(true);
+  const handleSend = async () => {
+    setSending(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/api/transactions/${txnId}/record-payment`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ amount, payment_mode: recordMode || null }),
-        }
-      );
-      const data = await res.json().catch(() => ({}));
+      const url = customer.customerId
+        ? `${API_BASE}/api/reminders/send?customer_id=${customer.customerId}`
+        : `${API_BASE}/api/reminders/send`;
+      const res = await fetch(url, { method: "POST", headers: authHeaders() });
       if (!res.ok) {
-        setRecordError(data.detail || "Failed to record payment.");
-        return;
+        const d = await res.json().catch(() => ({}));
+        throw new Error(parseApiError(d, "Could not send reminder."));
       }
-      setRecordSuccess(true);
-      setRecordTransactionId("");
-      setRecordAmount("");
-      loadOutstanding();
+      setDone(true);
+      setTimeout(() => { onSent && onSent(); onClose(); }, 1500);
     } catch {
-      setRecordError("Network error.");
+      alert("Could not send reminder. Check channel configuration in Settings.");
     } finally {
-      setRecordSubmitting(false);
+      setSending(false);
     }
   };
 
-  const pickBillRow = (row) => {
-    setRecordTransactionId(String(row.id));
-    setRecordAmount(String(row.dueAmount ?? ""));
-    setRecordError(null);
-    setRecordSuccess(false);
-  };
+  const channels = [
+    { id: "whatsapp", label: "💬 WhatsApp", sub: "No setup needed" },
+    { id: "sms",      label: "📱 SMS",      sub: "Needs Twilio" },
+    { id: "push",     label: "🔔 App Push", sub: "Needs Firebase" },
+  ];
 
   return (
-    <ShopLayout>
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">{t("payments.title")}</h1>
-        <div className="flex gap-2 border-b border-gray-200 mb-6">
-          {TAB_IDS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => switchTab(id)}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition ${
-                activeTab === id
-                  ? "border-blue-600 text-blue-700 bg-blue-50"
-                  : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              {tabLabels[id]}
-            </button>
-          ))}
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl mx-4 mb-4 sm:mb-0 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="font-bold text-gray-900 text-base">{customer.customerName}</p>
+            <p className="text-sm font-semibold text-red-500 mt-0.5">{fmtMoney(customer.totalDue)} pending</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-2xl font-light transition-colors">
+            ×
+          </button>
         </div>
 
-        {activeTab === "record" && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("payments.recordPayment")}</h2>
-            <p className="text-sm font-medium text-gray-700 mb-2">{t("payments.findBillBy")}</p>
-            <div className="flex flex-wrap gap-4 mb-6">
-              {[
-                { id: "bill", label: t("payments.byBillId") },
-                { id: "customer", label: t("payments.byCustomer") },
-                { id: "phone", label: t("payments.byPhone") },
-              ].map((opt) => (
-                <label key={opt.id} className="inline-flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="recordLookup"
-                    checked={recordLookupMode === opt.id}
-                    onChange={() => {
-                      setRecordLookupMode(opt.id);
-                      setRecordError(null);
-                      setRecordSuccess(false);
-                    }}
-                    className="text-blue-600"
-                  />
-                  <span className="text-sm text-gray-800">{opt.label}</span>
-                </label>
-              ))}
-            </div>
+        {done ? (
+          <div className="px-5 py-12 text-center">
+            <div className="text-5xl mb-3">✅</div>
+            <p className="font-bold text-gray-800 text-base">Reminder sent!</p>
+            <p className="text-sm text-gray-400 mt-1">{customer.customerName} will be notified.</p>
+          </div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
 
-            {recordLookupMode === "customer" && (
-              <div className="mb-6 space-y-3">
-                <CustomerSelectWithAdd
-                  id="payment-record-customer"
-                  value={recordCustomerId}
-                  onChange={(v) => {
-                    setRecordCustomerId(v);
-                    setRecordError(null);
-                  }}
-                  label={`${t("payments.byCustomer")} *`}
-                />
-                <p className="text-sm text-gray-500">{t("payments.pickBillHint")}</p>
-                {loadingOutstanding ? (
-                  <div className="flex justify-center py-6">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-                  </div>
-                ) : billsForRecordCustomer.length === 0 && recordCustomerId ? (
-                  <p className="text-sm text-amber-700">{t("payments.noBillsForSelection")}</p>
-                ) : (
-                  billsForRecordCustomer.length > 0 && (
-                    <div className="overflow-x-auto border border-gray-200 rounded-md">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="text-left px-3 py-2 font-medium text-gray-600">{t("payments.byBillId")}</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableAmount")}</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.dueAmount")}</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.date")}</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableActions")}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {billsForRecordCustomer.map((row) => (
-                            <tr key={row.id} className="hover:bg-gray-50">
-                              <td className="px-3 py-2 font-medium">{row.id}</td>
-                              <td className="px-3 py-2 text-right">
-                                ₹{(row.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-3 py-2 text-right text-amber-700">
-                                ₹{(row.dueAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-3 py-2 text-right text-gray-500">
-                                {row.date ? new Date(row.date).toLocaleDateString() : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => pickBillRow(row)}
-                                  className="text-blue-600 hover:underline font-medium"
-                                >
-                                  {t("payments.recordPayment")}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-
-            {recordLookupMode === "phone" && (
-              <div className="mb-6 space-y-3">
-                <div className="flex flex-wrap gap-2 items-end">
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t("payments.enterPhone")}</label>
-                    <input
-                      type="text"
-                      value={phoneSearch}
-                      onChange={(e) => setPhoneSearch(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                      placeholder="e.g. 9876543210"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={runPhoneLookup}
-                    className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-200"
-                  >
-                    {t("payments.findBills")}
+            {/* Channel selector */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Send via</p>
+              <div className="flex gap-2">
+                {channels.map((c) => (
+                  <button key={c.id} onClick={() => setChannel(c.id)}
+                    className={`flex-1 py-2.5 px-2 rounded-xl border text-center transition-all ${
+                      channel === c.id
+                        ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                        : "border-gray-200 text-gray-600 hover:border-blue-300 bg-white"}`}>
+                    <p className="text-sm font-semibold">{c.label}</p>
+                    <p className={`text-[10px] mt-0.5 ${channel === c.id ? "text-blue-100" : "text-gray-400"}`}>{c.sub}</p>
                   </button>
-                </div>
-                <CustomerSelectWithAdd
-                  id="payment-phone-alt-customer"
-                  value={phonePickCustomerId}
-                  onChange={(v) => {
-                    setPhonePickCustomerId(v);
-                    setPhoneMatchedIds([]);
-                    setPhoneSearch("");
-                    setRecordError(null);
-                  }}
-                  label={t("payments.orSelectAddCustomer")}
-                />
-                {phoneMatchedIds.length > 1 && (
-                  <div>
-                    <p className="text-sm text-gray-600 mb-2">{t("payments.multipleCustomersPhone")}</p>
-                    <CustomerPhonePickList
-                      ids={phoneMatchedIds}
-                      onSelect={setPhonePickCustomerId}
-                      value={phonePickCustomerId}
-                    />
-                  </div>
-                )}
-                {phonePickCustomerId && (
-                  <>
-                    <p className="text-sm text-gray-500">{t("payments.pickBillHint")}</p>
-                    {billsForPhoneCustomer.length === 0 ? (
-                      <p className="text-sm text-amber-700">{t("payments.noBillsForSelection")}</p>
-                    ) : (
-                      <div className="overflow-x-auto border border-gray-200 rounded-md">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="text-left px-3 py-2 font-medium text-gray-600">{t("payments.byBillId")}</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableAmount")}</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.dueAmount")}</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.date")}</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-600">{t("customer.tableActions")}</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {billsForPhoneCustomer.map((row) => (
-                              <tr key={row.id} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 font-medium">{row.id}</td>
-                                <td className="px-3 py-2 text-right">
-                                  ₹{(row.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                </td>
-                                <td className="px-3 py-2 text-right text-amber-700">
-                                  ₹{(row.dueAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                </td>
-                                <td className="px-3 py-2 text-right text-gray-500">
-                                  {row.date ? new Date(row.date).toLocaleDateString() : "—"}
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => pickBillRow(row)}
-                                    className="text-blue-600 hover:underline font-medium"
-                                  >
-                                    {t("payments.recordPayment")}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </>
-                )}
+                ))}
               </div>
-            )}
-
-            <form onSubmit={handleRecordPayment} className="space-y-4 max-w-md border-t border-gray-100 pt-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t("payments.byBillId")}</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={recordTransactionId}
-                  onChange={(e) => setRecordTransactionId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="e.g. 5"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={recordAmount}
-                  onChange={(e) => setRecordAmount(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment mode</label>
-                <select
-                  value={recordMode}
-                  onChange={(e) => setRecordMode(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="Card">Card</option>
-                  <option value="Bank">Bank</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              {recordError && (
-                <p className="text-sm text-red-600">{recordError}</p>
+              {channel === "whatsapp" && (
+                <p className="text-[11px] text-green-600 font-semibold mt-1.5">
+                  ✓ Recommended — opens WhatsApp on your device, no configuration needed
+                </p>
               )}
-              {recordSuccess && (
-                <p className="text-sm text-green-600">Payment recorded successfully.</p>
-              )}
-              <button
-                type="submit"
-                disabled={recordSubmitting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                {recordSubmitting ? "Recording…" : t("payments.recordPayment")}
-              </button>
-            </form>
-            <p className="mt-4 text-sm text-gray-500">
-              You can find the Bill ID on the customer’s account page or in Outstanding Balance.
-            </p>
-          </div>
-        )}
-
-        {activeTab === "outstanding" && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <span className="font-medium text-gray-800">Bills with due amount</span>
-              <span className="text-sm text-gray-600">
-                Total due: ₹{(outstanding.totalDue || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-              </span>
             </div>
-            {loadingOutstanding ? (
-              <div className="flex justify-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" />
-              </div>
-            ) : outstanding.items?.length === 0 ? (
-              <p className="px-6 py-8 text-gray-500 text-center">No outstanding bills.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Bill #</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Customer</th>
-                      <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Total</th>
-                      <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Due</th>
-                      <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {outstanding.items.map((row) => (
-                      <tr key={row.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-3 text-sm font-medium text-gray-900">{row.id}</td>
-                        <td className="px-6 py-3 text-sm text-gray-700">{row.customerName}</td>
-                        <td className="px-6 py-3 text-sm text-right text-gray-700">
-                          ₹{(row.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-right text-amber-700 font-medium">
-                          ₹{(row.dueAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-right text-gray-500">
-                          {row.date ? new Date(row.date).toLocaleDateString() : "—"}
-                        </td>
-                        <td className="px-6 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRecordTransactionId(String(row.id));
-                              setRecordAmount(String(row.dueAmount || 0));
-                              switchTab("record");
-                            }}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800"
-                          >
-                            Record payment
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/customer/${row.customerId}`)}
-                            className="ml-3 text-sm font-medium text-gray-600 hover:text-gray-800"
-                          >
-                            View customer
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            {/* Message editor */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Message preview</p>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={5}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none bg-gray-50" />
+              <p className="text-[11px] text-gray-400 mt-1">You can edit the message before sending</p>
+            </div>
+
+            {/* Bills list (multi-bill customers) */}
+            {customer.bills && customer.bills.length > 1 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 space-y-1">
+                <p className="text-[11px] font-bold text-amber-700 uppercase tracking-widest">Bills due</p>
+                {customer.bills.map((b) => (
+                  <div key={b.id} className="flex justify-between text-xs text-amber-800">
+                    <span>Bill #{b.id} · {fmtDate(b.date)}</span>
+                    <span className="font-bold">{fmtMoney(b.dueAmount)}</span>
+                  </div>
+                ))}
               </div>
             )}
-          </div>
-        )}
 
-        {activeTab === "history" && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-            {loadingHistory ? (
-              <div className="flex justify-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" />
-              </div>
-            ) : history.length === 0 ? (
-              <p className="px-6 py-8 text-gray-500 text-center">No payment history yet.</p>
+            {/* Action */}
+            {channel === "whatsapp" ? (
+              <button onClick={handleWhatsApp}
+                className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-sm shadow-sm transition-colors">
+                💬 Open WhatsApp &amp; Send
+              </button>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Customer</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Bill #</th>
-                      <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Mode</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {history.map((p) => (
-                      <tr key={p.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-3 text-sm text-gray-700">
-                          {p.createdAt ? new Date(p.createdAt).toLocaleString() : "—"}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-gray-700">{p.customerName}</td>
-                        <td className="px-6 py-3 text-sm text-gray-700">{p.transactionId}</td>
-                        <td className="px-6 py-3 text-sm text-right font-medium text-green-700">
-                          ₹{(p.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-gray-500">{p.paymentMode || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <button onClick={handleSend} disabled={sending}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50">
+                {sending ? "Sending…" : "Send Reminder"}
+              </button>
             )}
           </div>
         )}
       </div>
-    </ShopLayout>
+    </div>
   );
 }
 
-function CustomerPhonePickList({ ids, value, onSelect }) {
-  const { t } = useLanguage();
-  const [options, setOptions] = useState([]);
+// ── Inline Pay Panel ───────────────────────────────────────────────────────
+function PayPanel({ row, onSuccess, onCancel }) {
+  const [amount, setAmount] = useState(String(Math.round(row.dueAmount || 0)));
+  const [mode, setMode]     = useState("Cash");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]       = useState("");
+  const [done, setDone]     = useState(null);
+  const val = parseFloat(amount) || 0;
 
-  useEffect(() => {
-    if (!ids.length) {
-      setOptions([]);
-      return;
+  async function submit() {
+    if (!val || val <= 0) return setErr("Enter an amount greater than ₹0");
+    setLoading(true); setErr("");
+    try {
+      const res = await fetch(`${API_BASE}/api/transactions/${row.id}/record-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ amount: val, payment_mode: mode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiError(data, "Failed to record payment. Please try again."));
+      setDone({ amount: val, mode, remaining: Math.max(0, (row.dueAmount || 0) - val) });
+      setTimeout(() => onSuccess(), 2500);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
     }
-    fetch(`${API_BASE}/api/customer/all`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        const all = Array.isArray(list) ? list : [];
-        const idSet = new Set(ids.map(String));
-        setOptions(all.filter((c) => idSet.has(String(c.id))));
-      })
-      .catch(() => setOptions([]));
-  }, [ids]);
+  }
+
+  if (done) {
+    return (
+      <div className="mt-2 rounded-lg bg-green-50 border border-green-100 px-3 py-2 flex items-center gap-2">
+        <span className="text-green-600 text-sm">✓</span>
+        <span className="text-sm font-semibold text-green-800">{fmtMoney(done.amount)} via {done.mode}</span>
+        <span className="text-xs text-gray-400 ml-1">
+          {done.remaining > 0 ? `· ${fmtMoney(done.remaining)} remaining` : "· Fully cleared"}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onSelect(e.target.value)}
-      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md"
-    >
-      <option value="">{t("common.selectCustomer")}</option>
-      {options.map((c) => (
-        <option key={c.id} value={String(c.id)}>
-          {c.name} ({c.primary_phone || "—"})
-        </option>
-      ))}
-    </select>
+    <div className="mt-2 pt-3 border-t border-gray-100 space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setAmount(String(Math.round(row.dueAmount || 0)))}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+            Math.abs(val - Math.round(row.dueAmount || 0)) < 1
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-400"}`}>
+          Full — {fmtMoney(row.dueAmount)}
+        </button>
+        {row.dueAmount >= 2000 && (
+          <button onClick={() => setAmount(String(Math.round(row.dueAmount / 2)))}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+              Math.abs(val - Math.round(row.dueAmount / 2)) < 1
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-400"}`}>
+            Half — {fmtMoney(row.dueAmount / 2)}
+          </button>
+        )}
+      </div>
+      <div className="flex gap-1.5 flex-wrap items-center">
+        <div className="relative">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
+            className="pl-6 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold w-28 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
+        </div>
+        {["Cash", "UPI", "Card", "Bank"].map((m) => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+              mode === m
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-gray-50 text-gray-500 border-gray-200 hover:border-blue-400"}`}>
+            {m}
+          </button>
+        ))}
+        <button onClick={submit} disabled={loading || val <= 0}
+          className="px-4 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg hover:bg-blue-700 disabled:opacity-40 shadow-sm transition-colors whitespace-nowrap">
+          {loading ? "Saving…" : `Record ${fmtMoney(val)}`}
+        </button>
+        <button onClick={onCancel}
+          className="px-3 py-1.5 text-gray-400 border border-gray-200 rounded-lg text-xs hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+      </div>
+      {err && <p className="text-xs text-red-500">{err}</p>}
+    </div>
+  );
+}
+
+// ── Outstanding Tab ────────────────────────────────────────────────────────
+function OutstandingTab({ items, loading, onRefresh }) {
+  const navigate = useNavigate();
+  const [openId, setOpenId]           = useState(null);
+  const [search, setSearch]           = useState("");
+  const [reminderFor, setReminderFor] = useState(null);
+  const [remindingAll, setRemindingAll] = useState(false);
+  const [toast, setToast]             = useState(null);
+
+  function showToast(msg, type = "ok") {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  const totalDue   = (items || []).reduce((s, r) => s + (r.dueAmount || 0), 0);
+  const totalCount = (items || []).length;
+
+  const byCustomer = (items || [])
+    .filter((r) => !search || r.customerName?.toLowerCase().includes(search.toLowerCase()))
+    .reduce((acc, row) => {
+      const key = row.customerId;
+      if (!acc[key]) acc[key] = { customerId: row.customerId, customerName: row.customerName, bills: [] };
+      acc[key].bills.push(row);
+      return acc;
+    }, {});
+
+  const customers = Object.values(byCustomer).map((c) => ({
+    ...c,
+    totalDue:   c.bills.reduce((s, b) => s + (b.dueAmount || 0), 0),
+    oldestDate: c.bills.reduce((old, b) => (!old || b.date < old ? b.date : old), null),
+  })).sort((a, b) => daysOld(b.oldestDate) - daysOld(a.oldestDate));
+
+  async function remindAll() {
+    setRemindingAll(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/reminders/send`, { method: "POST", headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiError(data, "Failed to send reminders. Please try again."));
+      const count = data.sent != null ? data.sent : data.customers_notified != null ? data.customers_notified : customers.length;
+      showToast(`✓ Reminders sent to ${count} customer${count !== 1 ? "s" : ""}`);
+    } catch (e) {
+      showToast(`Could not send reminders: ${e.message}`, "err");
+    } finally {
+      setRemindingAll(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Toast */}
+      {toast && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-semibold flex items-center gap-2 ${
+          toast.type === "err"
+            ? "bg-red-50 border border-red-200 text-red-700"
+            : "bg-green-50 border border-green-200 text-green-800"}`}>
+          {toast.type === "err" ? "⚠️" : "✓"} {toast.msg}
+        </div>
+      )}
+
+      {/* Summary + Remind All */}
+      {!loading && totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-stretch gap-3">
+          <div className="grid grid-cols-3 gap-3 flex-1">
+            {[
+              { label: "Total Outstanding",   value: fmtMoney(totalDue),  color: "text-blue-700" },
+              { label: "Bills Pending",        value: totalCount,           color: "text-gray-900" },
+              { label: "Customers with Dues",  value: customers.length,    color: "text-gray-900" },
+            ].map((c) => (
+              <div key={c.label} className="bg-white rounded-2xl border border-gray-100 px-4 py-3 shadow-sm">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">{c.label}</p>
+                <p className={`text-xl font-extrabold ${c.color}`}>{c.value}</p>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={remindAll}
+            disabled={remindingAll}
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-white rounded-2xl border border-amber-200 text-amber-700 text-sm font-bold hover:bg-amber-50 transition-all disabled:opacity-50 shadow-sm whitespace-nowrap">
+            {remindingAll
+              ? <span className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin inline-block" />
+              : "🔔"}
+            {remindingAll ? "Sending…" : `Remind All (${customers.length})`}
+          </button>
+        </div>
+      )}
+
+      {/* Search */}
+      {totalCount > 0 && (
+        <div className="relative max-w-xs">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+          <input type="text" placeholder="Search customer…" value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
+          {search && (
+            <button onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">✕</button>
+          )}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Spinner size="lg" center />
+          </div>
+        ) : customers.length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-3xl mb-3">✓</p>
+            <p className="text-gray-600 font-semibold">
+              {search ? `No results for "${search}"` : "All dues cleared"}
+            </p>
+            {search && (
+              <button onClick={() => setSearch("")} className="mt-2 text-sm text-blue-600 hover:underline">
+                Clear search
+              </button>
+            )}
+          </div>
+        ) : (
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {["Customer", "Oldest Bill", "Due Amount", ""].map((h) => (
+                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap ${
+                    h === "Due Amount" ? "text-right" : "text-left"}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {customers.map((c) => {
+                const days = daysOld(c.oldestDate);
+                const isOpen = openId === c.customerId;
+                const collectRow = c.bills.length === 1
+                  ? c.bills[0]
+                  : { ...c.bills[0], dueAmount: c.totalDue };
+                return (
+                  <React.Fragment key={c.customerId}>
+                    <tr className={`hover:bg-blue-50/30 transition-colors ${isOpen ? "bg-blue-50/20" : ""}`}>
+
+                      {/* Customer */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-sm flex-shrink-0">
+                            {(c.customerName || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900 text-sm cursor-pointer hover:text-blue-600"
+                              onClick={() => navigate(`/customer/${c.customerId}`)}>
+                              {c.customerName}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {c.bills.length === 1
+                                ? `Bill #${c.bills[0].id} · ${fmtDate(c.bills[0].date)}`
+                                : `${c.bills.length} bills · #${c.bills.map((b) => b.id).join(", #")}`}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Age */}
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold ${ageBadgeCls(days)}`}>
+                          {ageLabel(days)}{days >= 60 ? " ⚠️" : ""}
+                        </span>
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-4 py-3 text-right">
+                        <p className="font-extrabold text-gray-900 text-sm">{fmtMoney(c.totalDue)}</p>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setReminderFor(c)}
+                            title="Send payment reminder"
+                            className="w-8 h-8 flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors text-sm">
+                            🔔
+                          </button>
+                          <button
+                            onClick={() => setOpenId(isOpen ? null : c.customerId)}
+                            className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                              isOpen
+                                ? "bg-gray-100 text-gray-600 border-gray-200"
+                                : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm"}`}>
+                            {isOpen ? "Cancel" : "Collect"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Inline pay panel */}
+                    {isOpen && (
+                      <tr className="bg-blue-50/10">
+                        <td colSpan={4} className="px-6 pb-3">
+                          <PayPanel
+                            row={collectRow}
+                            onSuccess={() => { setOpenId(null); onRefresh(); }}
+                            onCancel={() => setOpenId(null)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Reminder Modal */}
+      <ReminderModal
+        customer={reminderFor}
+        onClose={() => setReminderFor(null)}
+        onSent={() => {
+          showToast(`✓ Reminder sent to ${reminderFor ? reminderFor.customerName : ""}`);
+          setReminderFor(null);
+        }}
+      />
+    </div>
+  );
+}
+
+// ── History Tab ────────────────────────────────────────────────────────────
+function HistoryTab() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState("");
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/payments/history`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setHistory)
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = history.filter(
+    (p) => !search || p.customerName?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const thisMonth = history
+    .filter((p) => {
+      const d = new Date(p.createdAt), n = new Date();
+      return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+    })
+    .reduce((s, p) => s + (p.amount || 0), 0);
+
+  const totalCollected = history.reduce((s, p) => s + (p.amount || 0), 0);
+
+  const modeColor = (m) => ({
+    Cash: "bg-green-100 text-green-700 border border-green-200",
+    UPI:  "bg-blue-100 text-blue-700 border border-blue-200",
+    Card: "bg-purple-100 text-purple-700 border border-purple-200",
+  }[m] || "bg-gray-100 text-gray-600 border border-gray-200");
+
+  return (
+    <div className="space-y-5">
+      {!loading && history.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            { label: "Collected This Month", value: fmtMoney(thisMonth),     color: "text-blue-700" },
+            { label: "All-Time Collected",   value: fmtMoney(totalCollected), color: "text-gray-900" },
+            { label: "Total Payments",       value: history.length,           color: "text-gray-900" },
+          ].map((c) => (
+            <div key={c.label} className="bg-white rounded-2xl border border-gray-100 px-4 py-3 shadow-sm">
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">{c.label}</p>
+              <p className={`text-xl font-extrabold ${c.color}`}>{c.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="relative max-w-xs">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+        <input type="text" placeholder="Search customer…" value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
+        {search && (
+          <button onClick={() => setSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">✕</button>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Spinner size="lg" center />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-gray-500 font-semibold">
+              {search ? `No results for "${search}"` : "No payment history yet"}
+            </p>
+            {search && (
+              <button onClick={() => setSearch("")} className="mt-2 text-sm text-blue-600 hover:underline">
+                Clear search
+              </button>
+            )}
+          </div>
+        ) : (
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {["Date", "Customer", "Bill #", "Amount", "Mode"].map((h) => (
+                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap ${
+                    h === "Amount" ? "text-right" : "text-left"}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.map((p) => (
+                <tr key={p.id} className="hover:bg-blue-50/30 transition-colors">
+                  <td className="px-4 py-3 text-sm text-gray-500">{fmtDT(p.createdAt)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-xs flex-shrink-0">
+                        {(p.customerName || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <p className="font-semibold text-gray-900 text-sm">{p.customerName}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-400">#{p.transactionId}</td>
+                  <td className="px-4 py-3 text-right">
+                    <p className="font-extrabold text-blue-700 text-sm">{fmtMoney(p.amount)}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold ${modeColor(p.paymentMode)}`}>
+                      {p.paymentMode || "—"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────
+export default function PaymentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab") || "outstanding";
+  const [activeTab, setActiveTab] = useState(
+    ["outstanding", "history"].includes(tabFromUrl) ? tabFromUrl : "outstanding"
+  );
+  const [outstanding, setOutstanding]               = useState([]);
+  const [loadingOutstanding, setLoadingOutstanding] = useState(true);
+
+  const loadOutstanding = useCallback(() => {
+    setLoadingOutstanding(true);
+    fetch(`${API_BASE}/api/payments/outstanding`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setOutstanding(d.items || []))
+      .catch(() => setOutstanding([]))
+      .finally(() => setLoadingOutstanding(false));
+  }, []);
+
+  useEffect(() => { loadOutstanding(); }, [loadOutstanding]);
+
+  const switchTab = (id) => {
+    setActiveTab(id);
+    setSearchParams(id === "outstanding" ? {} : { tab: id });
+  };
+
+  return (
+    <ShopLayout>
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+        <div>
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Billing</p>
+          <h1 className="text-2xl font-extrabold text-gray-900">Payments</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Collect dues · send reminders · view history</p>
+        </div>
+
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+          {[
+            { id: "outstanding", label: "Outstanding" },
+            { id: "history",     label: "History" },
+          ].map((t) => (
+            <button key={t.id} onClick={() => switchTab(t.id)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                activeTab === t.id
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "outstanding" && (
+          <OutstandingTab
+            items={outstanding}
+            loading={loadingOutstanding}
+            onRefresh={loadOutstanding}
+          />
+        )}
+        {activeTab === "history" && <HistoryTab />}
+      </div>
+    </ShopLayout>
   );
 }

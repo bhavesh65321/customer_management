@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload
+from pydantic import BaseModel, Field
 from config.database import get_db
 from dependencies import require_customer
 from models.customer import Customer
 from models.transactional import Transaction
 from models.invoice import Invoice
-from pydantic import BaseModel
+from models.push_token import PushToken
+from models.order_repair import Order as WorkOrder
 from typing import Optional, Any, List
 
 router = APIRouter(prefix="/api/customer-portal", tags=["Customer Portal"])
@@ -54,6 +56,23 @@ class OrderSummary(BaseModel):
     due_amount: float
     date: Optional[str] = None
     products: Optional[List[Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorkOrderItem(BaseModel):
+    id: int
+    type: str
+    status: str
+    description: Optional[str] = None
+    item_description: Optional[str] = None
+    expected_date: Optional[str] = None
+    delivered_at: Optional[str] = None
+    amount_charged: Optional[float] = None
+    workflow_step: Optional[str] = None
+    karigar_name: Optional[str] = None
+    created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -192,3 +211,90 @@ def get_my_orders(
         )
         for t in transactions
     ]
+
+
+@router.get("/work-orders", response_model=List[WorkOrderItem])
+def get_my_work_orders(
+    db: Session = Depends(get_db),
+    auth: dict = Depends(require_customer),
+):
+    customer_id = auth["customer_id"]
+    rows = (
+        db.query(WorkOrder)
+        .options(joinedload(WorkOrder.karigar))
+        .filter(WorkOrder.customer_id == customer_id)
+        .order_by(WorkOrder.created_at.desc())
+        .all()
+    )
+    out: List[WorkOrderItem] = []
+    for o in rows:
+        out.append(
+            WorkOrderItem(
+                id=o.id,
+                type=o.type,
+                status=o.status,
+                description=o.description,
+                item_description=o.item_description,
+                expected_date=o.expected_date.isoformat() if o.expected_date else None,
+                delivered_at=o.delivered_at.isoformat() if o.delivered_at else None,
+                amount_charged=o.amount_charged,
+                workflow_step=o.workflow_step,
+                karigar_name=o.karigar.name if getattr(o, "karigar", None) else None,
+                created_at=o.created_at.isoformat() if o.created_at else None,
+            )
+        )
+    return out
+
+
+class CustomerPushTokenBody(BaseModel):
+    token: str = Field(..., min_length=10, max_length=512)
+    platform: str = Field("web", max_length=32)
+
+
+@router.post("/push-token")
+def register_customer_push_token(
+    body: CustomerPushTokenBody,
+    db: Session = Depends(get_db),
+    auth: dict = Depends(require_customer),
+):
+    customer_id = auth["customer_id"]
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    store_id = customer.store_id
+    existing = db.query(PushToken).filter(PushToken.token == body.token).first()
+    if existing:
+        existing.customer_id = customer_id
+        existing.user_id = None
+        existing.store_id = store_id
+        existing.platform = body.platform or "web"
+    else:
+        db.add(
+            PushToken(
+                token=body.token,
+                customer_id=customer_id,
+                user_id=None,
+                store_id=store_id,
+                platform=body.platform or "web",
+            )
+        )
+    db.commit()
+    return {"message": "Device registered for notifications"}
+
+
+@router.delete("/push-token")
+def unregister_customer_push_token(
+    token: str = Query(..., min_length=10),
+    db: Session = Depends(get_db),
+    auth: dict = Depends(require_customer),
+):
+    customer_id = auth["customer_id"]
+    row = (
+        db.query(PushToken)
+        .filter(PushToken.token == token, PushToken.customer_id == customer_id)
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+    return {"message": "OK"}

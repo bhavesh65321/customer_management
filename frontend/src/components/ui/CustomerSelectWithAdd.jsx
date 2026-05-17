@@ -71,7 +71,7 @@ export default function CustomerSelectWithAdd({
 
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">
+      <label htmlFor={id} className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
         {displayLabel}
       </label>
       <div className="flex flex-wrap items-stretch gap-2">
@@ -81,20 +81,20 @@ export default function CustomerSelectWithAdd({
           onChange={(e) => onChange(e.target.value)}
           required={required}
           disabled={disabled}
-          className="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 rounded-md"
+          className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
         >
           <option value="">{t("common.selectCustomer")}</option>
           {customers.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
-              {c.primary_phone ? ` (${c.primary_phone})` : ""}
+              {c.primary_phone ? ` · ${c.primary_phone}` : ""}
             </option>
           ))}
         </select>
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
-          className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 whitespace-nowrap"
+          className="px-4 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors whitespace-nowrap"
         >
           + {t("customer.addCustomer")}
         </button>

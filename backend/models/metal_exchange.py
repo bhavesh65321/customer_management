@@ -17,6 +17,7 @@ class MetalExchange(Base):
     pure_weight = Column(Float, nullable=True)
     cash_amount = Column(Float, nullable=True)
     making_charges = Column(Float, nullable=True)
+    rate_per_gram = Column(Float, nullable=True)   # gold/silver rate used at time of exchange
     notes = Column(String(500), nullable=True)
     exchange_date = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

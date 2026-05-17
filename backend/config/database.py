@@ -3,8 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import pymysql
 
-# Use this connection format instead
-DATABASE_URL = "mysql+pymysql://root:root%40123@localhost:3306/customer_management_app"
+from config.settings import DATABASE_URL  # loaded from .env — never hard-code here
 
 # Create engine with corrected connection arguments
 engine = create_engine(

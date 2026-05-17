@@ -1,20 +1,18 @@
 import {
   ChartBarIcon,
   UsersIcon,
-  ShoppingCartIcon,
-  CalendarIcon,
   BanknotesIcon,
-  BellAlertIcon,
   UserPlusIcon,
   DocumentArrowUpIcon,
   DocumentPlusIcon,
   ClipboardDocumentListIcon,
-  ClockIcon,
   CurrencyDollarIcon,
   ArrowsRightLeftIcon,
   WrenchScrewdriverIcon,
   CubeIcon,
   ExclamationTriangleIcon,
+  SparklesIcon,
+  ReceiptPercentIcon,
 } from "@heroicons/react/24/outline";
 
 export const SHOP_MENU_SECTIONS = [
@@ -44,7 +42,6 @@ export const SHOP_MENU_SECTIONS = [
     items: [
       { name: "Girvi List", nameKey: "girviList", icon: CurrencyDollarIcon, to: "/girvi" },
       { name: "New Girvi", nameKey: "newGirvi", icon: DocumentPlusIcon, to: "/girvi/new" },
-      { name: "Interest Due", nameKey: "interestDue", icon: ClockIcon, to: "/girvi/interest-due" },
     ],
   },
   {
@@ -55,6 +52,7 @@ export const SHOP_MENU_SECTIONS = [
       { name: "New Exchange", nameKey: "newExchange", icon: ArrowsRightLeftIcon, to: "/metal-exchange/new" },
       { name: "Exchange History", nameKey: "exchangeHistory", icon: ClipboardDocumentListIcon, to: "/metal-exchange" },
       { name: "Advance Balance", nameKey: "advanceBalance", icon: BanknotesIcon, to: "/metal-exchange/advance" },
+      { name: "Metal Rates", nameKey: "metalRates", icon: BanknotesIcon, to: "/metal-exchange/rates" },
     ],
   },
   {
@@ -64,6 +62,7 @@ export const SHOP_MENU_SECTIONS = [
     items: [
       { name: "All Orders", nameKey: "allOrders", icon: ClipboardDocumentListIcon, to: "/orders" },
       { name: "New Order / Repair", nameKey: "newOrderRepair", icon: DocumentPlusIcon, to: "/orders/new" },
+      { name: "Workflow Templates", nameKey: "workflowTemplates", icon: WrenchScrewdriverIcon, to: "/orders/workflows" },
     ],
   },
   {
@@ -78,35 +77,39 @@ export const SHOP_MENU_SECTIONS = [
     ],
   },
   {
+    label: "Pieces",
+    labelKey: "pieces",
+    icon: SparklesIcon,
+    items: [
+      { name: "All Pieces", nameKey: "allPieces", icon: CubeIcon, to: "/inventory/pieces" },
+      { name: "Karigars", nameKey: "karigars", icon: UsersIcon, to: "/karigars" },
+    ],
+  },
+  {
     label: "Payments",
     labelKey: "payments",
     icon: BanknotesIcon,
     items: [
-      { name: "Record Payment", nameKey: "recordPayment", icon: BanknotesIcon, to: "/payments" },
-      { name: "Payment History", nameKey: "paymentHistory", icon: ClockIcon, to: "/payments?tab=history" },
-      { name: "Outstanding Balance", nameKey: "outstandingBalance", icon: ClipboardDocumentListIcon, to: "/payments?tab=outstanding" },
+      { name: "Payments & Reminders", nameKey: "paymentsReminders", icon: BanknotesIcon, to: "/payments" },
     ],
-  },
-  {
-    label: "Notifications",
-    labelKey: "notifications",
-    icon: BellAlertIcon,
-    items: [{ name: "Reminders", nameKey: "reminders", icon: BellAlertIcon, to: "/reminders" }],
   },
   {
     label: "Dashboard",
     labelKey: "dashboard",
     icon: ChartBarIcon,
     items: [
-      { name: "Daily Sales", nameKey: "dailySales", icon: CalendarIcon, to: "/daily-sales" },
-      { name: "Charts & Reports", nameKey: "chartsReports", icon: ChartBarIcon, to: "/charts" },
+      { name: "Dashboard", nameKey: "dashboard", icon: ChartBarIcon, to: "/home" },
+      { name: "AI Business Review", nameKey: "aiBusiness", icon: SparklesIcon, to: "/jewellery-business" },
+      { name: "GST Reports", nameKey: "gstReports", icon: ReceiptPercentIcon, to: "/gst-reports" },
     ],
   },
   {
-    label: "Other",
-    labelKey: "other",
-    icon: ShoppingCartIcon,
-    items: [{ name: "Workers", nameKey: "workers", icon: UsersIcon, to: "/workers" }],
+    label: "Team",
+    labelKey: "team",
+    icon: UsersIcon,
+    items: [
+      { name: "Workers", nameKey: "workers", icon: UsersIcon, to: "/workers" },
+    ],
   },
 ];
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { Spinner } from "./Spinner";
 
 export function Table({ children, className = "" }) {
   return (
@@ -67,7 +68,7 @@ export default function DataTable({ columns, data, loading, emptyMessage = "No d
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" aria-hidden />
+        <Spinner size="lg" center />
       </div>
     );
   }

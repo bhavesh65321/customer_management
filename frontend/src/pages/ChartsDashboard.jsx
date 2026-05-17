@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ShopLayout from "../components/layout/ShopLayout";
 import { API_BASE, authHeaders } from "../api";
+import { Spinner } from "../components/ui/Spinner";
 import {
   BarChart,
   Bar,
@@ -175,7 +176,7 @@ export default function ChartsDashboard() {
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500" />
+            <Spinner size="lg" center />
           </div>
         ) : (
           <>
@@ -229,7 +230,7 @@ export default function ChartsDashboard() {
                           nameKey="name"
                         >
                           {pieData.map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
+                            <Cell key={entry.name || `pie-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
                         <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`, ""]} />

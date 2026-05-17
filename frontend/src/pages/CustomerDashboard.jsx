@@ -1,25 +1,22 @@
-import React, { useEffect, useState } from "react";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
-import { Select } from "../components/ui/Select";
+import React, { useEffect, useState, useCallback } from "react";
 import AddCustomerDrawer from "../components/ui/AddCustomer";
-import BuyProduct from "../components/ui/BuyProduct";
 import ShopLayout from "../components/layout/ShopLayout";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ui/ConfirmationPop";
 import InlineError from "../components/ui/InlineError";
 import { useLanguage } from "../context/LanguageContext";
-import { authHeaders, API_BASE } from "../api"; 
+import { authHeaders, API_BASE } from "../api";
+import { SkeletonCustomerList } from "../components/ui/Skeleton";
 
 export default function CustomerDashboard() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filter, setFilter] = useState("active");
   const [sort, setSort] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [showBuyPopup, setShowBuyPopup] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [formError, setFormError] = useState("");
@@ -27,32 +24,45 @@ export default function CustomerDashboard() {
   const navigate = useNavigate();
   const { t } = useLanguage();
 
+  // Debounce search — wait 350 ms after last keystroke before firing API
   useEffect(() => {
-    fetchCustomers();
-  }, [searchTerm, filter, sort]);
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 350);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     setIsLoading(true);
     try {
       const query = new URLSearchParams();
-      if (searchTerm) query.append("search", searchTerm);
-      if (filter) query.append("status", filter);
+      if (debouncedSearch.trim()) query.append("search", debouncedSearch.trim());
+      query.append("status", filter || "active");
       if (sort) query.append("sort", sort);
-      const res = await fetch(`${API_BASE}/api/customer/all?${query.toString()}`, {
+      const res = await fetch(`${API_BASE}/api/customer/list?${query.toString()}`, {
         headers: authHeaders(),
       });
-      if (res.status === 401) {
-        navigate("/login");
+      if (res.status === 401) { navigate("/login"); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const detail = d.detail;
+        const msg = Array.isArray(detail)
+          ? detail.map((x) => (typeof x === "object" && x.msg) || JSON.stringify(x)).join("; ")
+          : detail || `Failed to load customers (${res.status})`;
+        setFormError(msg);
+        setCustomers([]);
         return;
       }
+      setFormError("");
       const data = await res.json();
       setCustomers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error fetching customers:", err);
+      setCustomers([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [debouncedSearch, filter, sort, navigate]);
+
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
 
   const handleAddCustomer = async (customerData) => {
@@ -91,7 +101,11 @@ export default function CustomerDashboard() {
         return;
       }
       const d = await res.json().catch(() => ({}));
-      const msg = `${res.status}: ${d.detail || "Failed to save customer"}`;
+      // Backend can return: { detail: "..." } or { error: { message: "..." } }
+      const backendMsg = d.detail || d.error?.message || d.message || "Failed to save customer";
+      const msg = res.status === 400
+        ? backendMsg                          // show backend message as-is for validation errors
+        : `${res.status}: ${backendMsg}`;
       setFormError(msg);
       throw new Error(msg);
     } catch (err) {
@@ -128,66 +142,7 @@ export default function CustomerDashboard() {
   
   
 
-  // const handleAddCustomer = async (customerData) => {
-  //   const payload = {
-  //     name: customerData.name,
-  //     father_name: customerData.fatherName,
-  //     primary_phone: customerData.phonePrimary,
-  //     secondary_phone: customerData.phoneSecondary,
-  //     address: customerData.address,
-  //     city: customerData.city,
-  //     pincode: customerData.pincode,
-  //     gender: customerData.gender,
-  //     country: customerData.country,
-  //   };
-
-  //   try {
-  //     const res = await fetch("http://localhost:5000/api/customer/add", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify(payload),
-  //     });
-
-  //     if (res.ok) {
-  //       setShowDrawer(false);
-  //       fetchCustomers();
-  //     } else {
-  //       alert("Failed to add customer");
-  //     }
-  //   } catch (err) {
-  //     console.error(err);
-  //     alert("Something went wrong.");
-  //   }
-  // };
-
-  const filteredCustomers = customers.filter(customer => {
-    const matchesSearch =
-      !searchTerm ||
-      customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (customer.primary_phone && String(customer.primary_phone).includes(searchTerm)) ||
-      customer.city?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus =
-      filter === "all" ||
-      (filter === "active" && customer.is_active !== false) ||
-      (filter === "inactive" && customer.is_active === false);
-
-    return matchesSearch && matchesStatus;
-  });
-
-  const sortedCustomers = [...filteredCustomers].sort((a, b) => {
-    if (!sort) return 0;
-    switch (sort) {
-      case "recent":
-        return (b.id ?? 0) - (a.id ?? 0);
-      case "oldest":
-        return (a.id ?? 0) - (b.id ?? 0);
-      case "name":
-        return (a.name || "").localeCompare(b.name || "");
-      default:
-        return 0;
-    }
-  });
+  const isDefaultListView = !searchTerm.trim() && filter === "active" && !sort;
 
   return (
     <ShopLayout>
@@ -195,95 +150,127 @@ export default function CustomerDashboard() {
         {!showDrawer && formError && (
           <InlineError message={formError} onDismiss={() => setFormError("")} className="mb-4" />
         )}
-        <div className="flex flex-col gap-4 mb-4 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">{t("customer.title")}</h1>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
-  <div className="relative">
-    <Input
-      placeholder={t("customer.searchPlaceholder")}
-      value={searchTerm}
-      onChange={(e) => setSearchTerm(e.target.value)}
-      className="w-full pl-10 pr-4 py-2"
-    />
-    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-      <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-        <path
-          fillRule="evenodd"
-          d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.82 3.906l4.387 4.387a1 1 0 01-1.414 1.414l-4.387-4.387A6 6 0 012 8z"
-          clipRule="evenodd"
-        />
-      </svg>
-    </div>
-  </div>
-
-  {/* Filter Dropdown */}
-  <Select
-    value={filter}
-    onChange={(e) => setFilter(e.target.value)}
-    className="w-full"
-    options={[
-      { label: t("customer.filterActive"), value: "active" },
-      { label: t("customer.filterInactive"), value: "inactive" },
-      { label: t("customer.filterAll"), value: "all" },
-    ]}
-  />
-
-  <Select
-    value={sort}
-    onChange={(e) => setSort(e.target.value)}
-    className="w-full"
-    options={[
-      { label: t("customer.sortBy"), value: "" },
-      { label: t("customer.sortNewest"), value: "recent" },
-      { label: t("customer.sortOldest"), value: "oldest" },
-      { label: t("customer.sortName"), value: "name" },
-    ]}
-  />
-
-  <div className="flex sm:justify-end">
-    <Button onClick={() => { setFormError(""); setShowDrawer(true); }} className="w-full sm:w-auto bg-blue-600 text-white">
-      + {t("customer.addCustomer")}
-    </Button>
-  </div>
-</div>
-
+        {/* ── Header row ─────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t("customer.title")}</h1>
+            {!isLoading && (
+              <p className="text-sm text-gray-400 mt-0.5">
+                {customers.length > 0
+                  ? `${customers.length} customer${customers.length !== 1 ? "s" : ""}`
+                  : "No customers yet"}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              to="/import-customers"
+              className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium whitespace-nowrap"
+            >
+              {t("customer.importCustomersLink")}
+            </Link>
+            <button
+              type="button"
+              onClick={() => { setFormError(""); setShowDrawer(true); }}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 whitespace-nowrap shadow-sm"
+            >
+              + {t("customer.addCustomer")}
+            </button>
+          </div>
         </div>
 
-        {/* Customer Table */}
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        {/* ── Filter bar ─────────────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-5 flex flex-wrap items-center gap-3">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[180px]">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.82 3.906l4.387 4.387a1 1 0 01-1.414 1.414l-4.387-4.387A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
+            <input
+              type="text"
+              placeholder={t("customer.searchPlaceholder")}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
           </div>
-        ) : sortedCustomers.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-            <h3 className="text-lg font-semibold text-gray-900">{t("customer.noCustomersFound")}</h3>
-            <p className="text-gray-500">
-              {searchTerm || filter
-                ? t("customer.tryChangingFilter")
-                : t("customer.addFirstCustomer")}
+
+          {/* Status pills */}
+          <div className="flex gap-1.5">
+            {[
+              { label: t("customer.filterActive"), value: "active" },
+              { label: t("customer.filterInactive"), value: "inactive" },
+              { label: t("customer.filterAll"), value: "all" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setFilter(opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap
+                  ${filter === opt.value
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort select */}
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+          >
+            <option value="">{t("customer.sortBy")}</option>
+            <option value="recent">{t("customer.sortNewest")}</option>
+            <option value="oldest">{t("customer.sortOldest")}</option>
+            <option value="name">{t("customer.sortName")}</option>
+          </select>
+        </div>
+
+        {/* ── Content ────────────────────────────────────────────────── */}
+        {isLoading ? (
+          <SkeletonCustomerList />
+        ) : customers.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12 text-center">
+            <div className="text-5xl mb-4">👥</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">{t("customer.noCustomersFound")}</h3>
+            <p className="text-sm text-gray-500">
+              {isDefaultListView ? t("customer.addFirstCustomer") : t("customer.tryChangingFilter")}
             </p>
-            <div className="mt-4">
-              <Button onClick={() => { setFormError(""); setShowDrawer(true); }} className="bg-blue-600 text-white">
-                + {t("customer.addCustomer")}
-              </Button>
-            </div>
+            {isDefaultListView && (
+              <p className="text-xs text-gray-400 mt-3">
+                Use the <span className="font-semibold text-blue-600">+ {t("customer.addCustomer")}</span> button above to get started.
+              </p>
+            )}
           </div>
         ) : (
           <>
             <div className="hidden sm:block overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
-                  <tr>
-                    <th className="px-4 py-3 text-left">{t("customer.tableName")}</th>
-                    <th className="px-4 py-3 text-left">{t("customer.tableContact")}</th>
-                    <th className="px-4 py-3 text-left">{t("customer.tableLocation")}</th>
-                    <th className="px-4 py-3 text-left">{t("customer.tableStatus")}</th>
-                    <th className="px-4 py-3 text-right">{t("customer.tableActions")}</th>
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-widest">{t("customer.tableName")}</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-widest">{t("customer.tableContact")}</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-widest">{t("customer.tableLocation")}</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-widest">{t("customer.tableStatus")}</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-widest">{t("customer.tableActions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {sortedCustomers.map((customer) => (
+                  {customers.map((customer) => (
                     <tr key={customer.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="font-semibold text-gray-900">{customer.name}</div>
@@ -315,7 +302,7 @@ export default function CustomerDashboard() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
+                            onClick={() => navigate(`/shop?customerId=${customer.id}`)}
                             className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
                           >
                             {t("customer.buy")}
@@ -345,7 +332,7 @@ export default function CustomerDashboard() {
             </div>
 
             <div className="sm:hidden space-y-3">
-              {sortedCustomers.map((customer) => (
+              {customers.map((customer) => (
                 <div
                   key={customer.id}
                   className="bg-white rounded-lg shadow-sm border border-gray-100 p-4"
@@ -363,7 +350,7 @@ export default function CustomerDashboard() {
                   </div>
                   <div className="text-sm text-gray-600 mb-3">
                     <div>{customer.primary_phone}</div>
-                    <div>{customer.city}, {customer.country}</div>
+                    <div>{[customer.city, customer.country].filter(Boolean).join(", ") || "—"}</div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button
@@ -375,7 +362,7 @@ export default function CustomerDashboard() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setSelectedCustomer(customer); setShowBuyPopup(true); }}
+                      onClick={() => navigate(`/shop?customerId=${customer.id}`)}
                       className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
                     >
                       {t("customer.buy")}
@@ -433,14 +420,6 @@ export default function CustomerDashboard() {
         onConfirm={handleDeleteCustomer}
         onCancel={() => setShowDeleteModal(false)}
       />
-
-      {showBuyPopup && selectedCustomer && (
-        <BuyProduct
-          customer={selectedCustomer}
-          isOpen={showBuyPopup}
-          onClose={() => setShowBuyPopup(false)}
-        />
-      )}
 
     </ShopLayout>
   );

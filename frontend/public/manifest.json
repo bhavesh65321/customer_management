@@ -1,6 +1,15 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "name": "Jewellery Manager",
+  "short_name": "JewelMgr",
+  "description": "Complete jewellery shop management — customers, billing, girvi loans, orders, stock & GST reports.",
+  "start_url": "/home",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#7C3AED",
+  "background_color": "#ffffff",
+  "lang": "en-IN",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,16 +19,37 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "shortcuts": [
+    {
+      "name": "New Bill",
+      "short_name": "Bill",
+      "description": "Create a new bill quickly",
+      "url": "/shop",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Customers",
+      "short_name": "Customers",
+      "description": "View customer list",
+      "url": "/customerDashboard",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Girvi",
+      "short_name": "Girvi",
+      "description": "Manage girvi loans",
+      "url": "/girvi",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    }
+  ]
 }

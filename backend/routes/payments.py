@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from config.database import get_db
 from dependencies import require_staff
 from core.db_filters import apply_store_filter
 from models.transactional import Transaction
 from models.payment import Payment
+from models.customer import Customer
 from typing import Optional
 
 router = APIRouter(tags=["Payments"])
@@ -13,30 +14,36 @@ router = APIRouter(tags=["Payments"])
 
 @router.get("/outstanding")
 def get_outstanding(
+    skip: int = Query(0, ge=0, description="Records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_staff),
 ):
     q = (
-        db.query(Transaction)
+        db.query(Transaction, Customer)
+        .outerjoin(Customer, Customer.id == Transaction.customer_id)
         .filter(Transaction.due_amount > 0)
     )
     q = apply_store_filter(q, Transaction, payload)
-    rows = q.order_by(Transaction.date.desc()).all()
-    total_due = sum(float(t.due_amount or 0) for t in rows)
+    total_due = db.query(
+        func.coalesce(func.sum(Transaction.due_amount), 0)
+    ).filter(Transaction.due_amount > 0).scalar() or 0.0
+    rows = q.order_by(Transaction.date.desc()).offset(skip).limit(limit).all()
     return {
         "items": [
             {
                 "id": t.id,
                 "customerId": t.customer_id,
                 "customerName": t.customer_name,
+                "phone": (c.primary_phone if c else None),
                 "grandTotal": float(t.grand_total or 0),
                 "paidAmount": float(t.paid_amount or 0),
                 "dueAmount": float(t.due_amount or 0),
                 "date": t.date.isoformat() if t.date else None,
             }
-            for t in rows
+            for t, c in rows
         ],
-        "totalDue": round(total_due, 2),
+        "totalDue": round(float(total_due), 2),
         "count": len(rows),
     }
 
@@ -50,10 +57,7 @@ def get_payment_history(
 ):
     store_id = payload.get("store_id")
     q = db.query(Payment).join(Transaction)
-    if store_id is not None:
-        q = q.filter(Transaction.store_id == store_id)
-    else:
-        q = q.filter(Transaction.store_id.is_(None))
+    q = apply_store_filter(q, Transaction, payload)
     if customer_id is not None:
         q = q.filter(Transaction.customer_id == customer_id)
     q = q.order_by(desc(Payment.created_at)).limit(limit)

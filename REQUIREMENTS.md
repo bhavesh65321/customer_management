@@ -4,6 +4,8 @@ This document lists the requirements for the customer management project and how
 
 **New modules (see `docs/NEW_FEATURES_PLAN.md`):** Girvi (loans), Metal Exchange, Orders & Repairs, Stock. Backend APIs: `/api/girvi`, `/api/metal-exchange`, `/api/orders`, `/api/stock`. Run the backend once so new DB tables are created (`Base.metadata.create_all`).
 
+**Jewellery intelligence (serialized pieces, karigars, lifecycle, insights):** APIs `/api/inventory` (piece lifecycle under `/api/inventory/{id}/events`), `/api/karigars`, `/api/insights`. Bills can link a line to a serialized piece via optional `pieceId` on each product. **Existing MySQL DBs:** run `docs/sql/add_jewellery_intelligence.sql` (or rely on `create_all` for new databases only).
+
 **Store company logo:** The `stores` table includes optional `logo_url`. On an **existing** database created before this feature, run:  
 `ALTER TABLE stores ADD COLUMN logo_url VARCHAR(500) NULL;`  
 (see `docs/sql/add_store_logo_url.sql`). Logos are saved under `backend/uploads/store_logos/` and served at `/uploads/store_logos/...`.
@@ -27,6 +29,7 @@ This document lists the requirements for the customer management project and how
 | passlib[bcrypt] | Password hashing |
 | reportlab | PDF generation (purchase order / invoice) |
 | twilio | SMS notifications (purchase order) |
+| firebase-admin | Optional FCM push (mobile / PWA) |
 
 **Install:**
 
@@ -69,11 +72,13 @@ npm install
 
 ---
 
-## Optional: email & SMS (backend)
+## Optional: email, SMS, WhatsApp, and push (backend)
 
-Purchase order notifications use:
+Purchase order and payment reminders can use:
 
-- **Email:** SMTP (e.g. Gmail, SendGrid). Set in `.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `FROM_EMAIL`.
-- **SMS:** Twilio. Set in `.env`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`.
+- **Email:** SMTP. `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `FROM_EMAIL`.
+- **SMS:** Twilio Programmable SMS. `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`.
+- **WhatsApp:** Same Twilio account; set `TWILIO_WHATSAPP_FROM=whatsapp:+...` (see `docs/NOTIFICATIONS.md`).
+- **Mobile push (FCM):** Firebase service account JSON path (`GOOGLE_APPLICATION_CREDENTIALS` or `FIREBASE_CREDENTIALS_PATH`); device registration via `POST /api/customer-portal/push-token` or `POST /api/notifications/push-token`.
 
-See `backend/.env.example` for placeholders. If these are not set, the app runs without sending email or SMS.
+See `backend/.env.example` and `docs/NOTIFICATIONS.md`. If channels are not configured, the app runs without sending on those channels.

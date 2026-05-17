@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeftIcon, ExclamationTriangleIcon, ShoppingCartIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon, ShoppingCartIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
 import EditProductPopup from "./EditProductPopup";
 import BackButton from "./BackButton";
+import { parseApiError } from "../../utils/apiError";
 import InlineError from "./InlineError";
+import AddCustomerDrawer from "./AddCustomer";
+import CollectPaymentModal from "./CollectPaymentModal";
+import InvoicePreviewModal from "./InvoicePreviewModal";
 import { useLanguage } from "../../context/LanguageContext";
 import { authHeaders, API_BASE } from "../../api";
 import { formatDate, formatRupee } from "../../utils/format";
+import { Spinner } from "./Spinner";
 
+const METAL_TYPE_LABELS = {
+  raw_to_pure: "Raw → Pure",
+  raw_to_cash: "Raw → Cash",
+  advance_metal: "Advance (metal)",
+  advance_money: "Advance (money)",
+};
 
 const CustomerAccount = () => {
   const { customerId } = useParams();
@@ -18,11 +29,13 @@ const CustomerAccount = () => {
   const [transactions, setTransactions] = useState([]);
   const [girviLoans, setGirviLoans] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [metalExchanges, setMetalExchanges] = useState([]);
+  const [advanceBalanceRow, setAdvanceBalanceRow] = useState(null);
   const [sectionFilter, setSectionFilter] = useState("purchases");
-  const [transactionId, setTransactionId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedTransaction, setExpandedTransaction] = useState(null);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -30,24 +43,37 @@ const CustomerAccount = () => {
   const [invoiceData, setInvoiceData] = useState(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
+  const [collectTx, setCollectTx] = useState(null);
+  const [collectLoading, setCollectLoading] = useState(false);
+  const [collectError, setCollectError] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         const headers = authHeaders();
-        const [customerRes, transactionsRes, girviRes, ordersRes] = await Promise.all([
+        const [customerRes, transactionsRes, girviRes, ordersRes, metalRes, advanceRes] = await Promise.all([
           fetch(`${API_BASE}/api/customer/${customerId}`, { headers }),
           fetch(`${API_BASE}/api/transactions/${customerId}`, { headers }),
           fetch(`${API_BASE}/api/girvi?customer_id=${customerId}`, { headers }),
           fetch(`${API_BASE}/api/orders?customer_id=${customerId}`, { headers }),
+          fetch(`${API_BASE}/api/metal-exchange?customer_id=${customerId}`, { headers }),
+          fetch(`${API_BASE}/api/metal-exchange/advance-balance?customer_id=${customerId}`, { headers }),
         ]);
-        if (customerRes.status === 401 || transactionsRes.status === 401 || girviRes.status === 401 || ordersRes.status === 401) {
+        if (
+          customerRes.status === 401 ||
+          transactionsRes.status === 401 ||
+          girviRes.status === 401 ||
+          ordersRes.status === 401 ||
+          metalRes.status === 401 ||
+          advanceRes.status === 401
+        ) {
           navigate("/login");
           return;
         }
         if (!customerRes.ok || !transactionsRes.ok) {
-          throw new Error("Failed to fetch data");
+          const errData = await (customerRes.ok ? transactionsRes : customerRes).json().catch(() => ({}));
+          throw new Error(parseApiError(errData, "Failed to load customer data. Please try again."));
         }
         const [customerData, transactionsData] = await Promise.all([
           customerRes.json(),
@@ -59,6 +85,14 @@ const CustomerAccount = () => {
         const ordersData = ordersRes.ok ? await ordersRes.json() : [];
         setGirviLoans(Array.isArray(girviData) ? girviData : []);
         setOrders(Array.isArray(ordersData) ? ordersData : []);
+        const metalData = metalRes.ok ? await metalRes.json() : [];
+        setMetalExchanges(Array.isArray(metalData) ? metalData : []);
+        if (advanceRes.ok) {
+          const advArr = await advanceRes.json();
+          setAdvanceBalanceRow(Array.isArray(advArr) && advArr.length > 0 ? advArr[0] : null);
+        } else {
+          setAdvanceBalanceRow(null);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -66,49 +100,17 @@ const CustomerAccount = () => {
       }
     };
     fetchData();
-  }, [customerId, transactionId, navigate]);
+  }, [customerId, navigate]);
 
   const ordersNew = (orders || []).filter((o) => o.type === "new_order");
   const ordersRepair = (orders || []).filter((o) => o.type === "repair");
+  const metalAdvanceRows = (metalExchanges || []).filter((r) => r.type === "advance_metal" || r.type === "advance_money");
+  const metalTradeRows = (metalExchanges || []).filter((r) => r.type === "raw_to_pure" || r.type === "raw_to_cash");
 
   const handleEdit = (transaction) => {
     setSelectedTransaction(transaction);
     setShowEditModal(true);
   };
-
-  // Assuming you are using React
-  const handleFullyPaid = async (transaction) => {
-    const updatedTransaction = {
-      ...transaction,
-      dueAmount: 0,
-      paidAmount: transaction.grandTotal,
-    };
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/transactions/${transaction.id}`,
-        {
-          method: "PUT",
-          headers: authHeaders(),
-          body: JSON.stringify(updatedTransaction),
-        }
-      );
-      if (res.status === 401) {
-        navigate("/login");
-        return;
-      }
-      if (!res.ok) {
-        throw new Error("Failed to update transaction");
-      }
-      const data = await res.json();
-      handleUpdateTransaction(data);
-      setTransactionId(transaction.id); // Update your frontend state/UI
-    } catch (error) {
-      console.error("Error marking as fully paid:", error);
-    }
-  };
-  
-
-  
 
   const handleCloseModal = () => {
     setShowEditModal(false);
@@ -140,86 +142,23 @@ const CustomerAccount = () => {
     setInvoiceError("");
   };
 
-  const handlePrintInvoice = () => {
-    if (!invoiceData?.transaction) return;
-    const txn = invoiceData.transaction;
-    const products = txn.products || [];
-    const rows = products
-      .map(
-        (p, i) =>
-          `<tr><td>${i + 1}</td><td>${p.productName || "-"}</td><td>${p.weight ?? "-"}</td><td>${p.rate != null ? Number(p.rate).toFixed(2) : "-"}</td><td>${p.total != null ? Number(p.total).toFixed(2) : "-"}</td></tr>`
-      )
-      .join("");
-    const win = window.open("", "_blank");
-    win.document.write(`
-      <!DOCTYPE html><html><head><title>${t("customer.purchaseOrder")} #${txn.id}</title>
-      <style>body{font-family:sans-serif;max-width:600px;margin:24px auto;padding:16px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f5f5f5;} .text-right{text-align:right;} .mt{ margin-top:16px;}</style>
-      </head><body>
-      <h2 style="text-align:center">${t("customer.purchaseOrder").toUpperCase()}</h2>
-      ${invoiceData.storeName ? `<p>${invoiceData.storeName}</p>` : ""}
-      <p><strong>${t("customer.customerLabel")}:</strong> ${txn.customerName}</p>
-      <p><strong>${t("customer.date")}:</strong> ${txn.date ? new Date(txn.date).toLocaleString() : "-"}</p>
-      <p><strong>${t("customer.orderNo")}:</strong> #${txn.id}</p>
-      <table><thead><tr><th>${t("customer.tableNo")}</th><th>${t("customer.invoiceProduct")}</th><th>${t("customer.tableWeightQty")}</th><th>${t("customer.tableRate")}</th><th>${t("customer.tableAmount")}</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="mt"><strong>${t("customer.grandTotal")}:</strong> ₹${Number(txn.grandTotal || 0).toFixed(2)}</div>
-      <div><strong>${t("customer.paidLabel")}:</strong> ₹${Number(txn.paidAmount || 0).toFixed(2)}</div>
-      <div><strong>${t("customer.dueLabel")}:</strong> ₹${Number(txn.dueAmount || 0).toFixed(2)}</div>
-      </body></html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 300);
-  };
-
-  const handleDownloadInvoicePdf = async () => {
-    if (!invoiceTransactionId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/transactions/invoice/${invoiceTransactionId}/pdf`, {
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to download");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `purchase-order-${invoiceTransactionId}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setInvoiceError("Failed to download PDF");
-    }
-  };
-
-  const handleUpdateTransaction = async (updatedTransaction) => {
-    try {
-      const id = updatedTransaction.id ?? updatedTransaction._id;
-      setTransactions((prev) =>
-        prev.map((txn) => (txn.id === id || txn._id === id ? updatedTransaction : txn))
-      );
-      handleCloseModal();
-      setTransactionId(id);
-    } catch (err) {
-      console.error("Update failed:", err);
-    }
+  // Bug 8 fixed: surgically update local state, don't silently swallow errors
+  const handleUpdateTransaction = (updatedTransaction) => {
+    const id = updatedTransaction.id ?? updatedTransaction._id;
+    setTransactions((prev) =>
+      prev.map((txn) => (txn.id === id || txn._id === id ? { ...txn, ...updatedTransaction } : txn))
+    );
+    handleCloseModal();
   };
 
   const toggleTransaction = (txnId) => {
     setExpandedTransaction((prev) => (prev === txnId ? null : txnId));
   };
 
-
-  const totalAmount = transactions.reduce((sum, txn) => sum + (txn.grandTotal || 0), 0);
-  const totalPaid = transactions.reduce((sum, txn) => sum + (txn.paidAmount || 0), 0);
-  const totalDue = transactions.reduce((sum, txn) => sum + (txn.dueAmount || 0), 0);
-  const isAtRisk = totalDue > (totalAmount * 0.5);
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <Spinner size="lg" center />
       </div>
     );
   }
@@ -246,267 +185,382 @@ const CustomerAccount = () => {
     );
   }
 
+  // ── derived values ──────────────────────────────────────────────
+  const totalAmount = transactions.reduce((s, t) => s + (t.grandTotal || 0), 0);
+  const totalPaid   = transactions.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  const totalDue    = transactions.reduce((s, t) => s + (t.dueAmount || 0), 0);
+  const isAtRisk    = totalDue > totalAmount * 0.5;
+  const payPct      = totalAmount > 0 ? Math.min(100, (totalPaid / totalAmount) * 100) : 0;
+  const pendingTxns = transactions.filter((t) => (t.dueAmount || 0) > 0);
+  const initials    = (customer.name || "?").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  const inrFmt      = (v) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const TABS = [
+    { key: "purchases",    label: t("customer.filterPurchases"),    count: transactions.length },
+    { key: "girvi",        label: t("customer.filterGirvi"),        count: girviLoans.length },
+    { key: "orders",       label: t("customer.filterOrders"),       count: ordersNew.length },
+    { key: "repairs",      label: t("customer.filterRepairs"),      count: ordersRepair.length },
+    { key: "metalAdvance", label: t("customer.metalAdvanceTab"),    count: metalAdvanceRows.length },
+    { key: "metalExchange",label: t("customer.metalExchangeTab"),   count: metalTradeRows.length },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6 flex flex-wrap items-center gap-3">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+
+        {/* ── Top nav bar ─────────────────────────────────────────── */}
+        <div className="flex items-center justify-between">
           <BackButton to="/customerDashboard" label={t("customer.backToCustomers")} />
-          <button
-            type="button"
-            onClick={() => navigate(`/shop?customerId=${customerId}`)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium text-sm"
-          >
-            <ShoppingCartIcon className="h-5 w-5" />
-            {t("customer.buy")}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("customer.customerDetails")}</h2>
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <h1 className="text-xl font-bold text-gray-900">{customer.name}</h1>
-              {isAtRisk && (
-                <span className="inline-flex items-center bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
-                  <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
-                  {t("customer.highRisk")}
-                </span>
-              )}
-            </div>
-            <div className="space-y-2 text-sm text-gray-700">
-              <p><span className="font-medium text-gray-500">{t("customer.phone")}:</span> {customer.primary_phone}</p>
-              {customer.secondary_phone && (
-                <p><span className="font-medium text-gray-500">{t("customer.altPhone")}:</span> {customer.secondary_phone}</p>
-              )}
-              <p><span className="font-medium text-gray-500">{t("common.address")}:</span> {customer.address}</p>
-              <p><span className="font-medium text-gray-500">{t("form.city")}:</span> {customer.city}, {customer.pincode}</p>
-              <p><span className="font-medium text-gray-500">{t("form.country")}:</span> {customer.country}</p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">{t("customer.accountSummary")}</h2>
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">{t("customer.totalPurchases")}</span>
-                <span className="font-medium text-gray-900">{transactions.length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">{t("customer.totalAmount")}</span>
-                <span className="font-medium text-gray-900">₹{(totalAmount ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">{t("customer.amountPaid")}</span>
-                <span className="font-medium text-green-600">₹{(totalPaid ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">{t("customer.pendingAmount")}</span>
-                <span className={`font-medium ${totalDue > 0 ? "text-red-600" : "text-gray-900"}`}>
-                  ₹{(totalDue ?? 0).toFixed(2)}
-                </span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowEditCustomer(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-xl text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <PencilSquareIcon className="h-4 w-4" />
+              {t("customer.editCustomer") || "Edit Customer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/shop?customerId=${customerId}`)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <ShoppingCartIcon className="h-4 w-4" />
+              {t("customer.buy")}
+            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
-            <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
-              {["purchases", "girvi", "orders", "repairs"].map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSectionFilter(key)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    sectionFilter === key ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  {key === "purchases" && t("customer.filterPurchases")}
-                  {key === "girvi" && t("customer.filterGirvi")}
-                  {key === "orders" && t("customer.filterOrders")}
-                  {key === "repairs" && t("customer.filterRepairs")}
-                </button>
-              ))}
+        {/* ── Hero 2-col card ──────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* Customer identity card */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0 shadow-sm">
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start gap-2 flex-wrap">
+                  <h1 className="text-xl font-bold text-gray-900 leading-tight">{customer.name}</h1>
+                  {isAtRisk && (
+                    <span
+                      title="High outstanding due relative to total purchases"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 cursor-help"
+                    >
+                      <ExclamationTriangleIcon className="h-3 w-3" />
+                      {t("customer.highRisk")}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2.5 space-y-1">
+                  {customer.primary_phone && (
+                    <p className="text-sm text-gray-600">📞 {customer.primary_phone}</p>
+                  )}
+                  {customer.secondary_phone && (
+                    <p className="text-sm text-gray-500">📞 {customer.secondary_phone} <span className="text-gray-400 text-xs">(alt)</span></p>
+                  )}
+                  {customer.address && (
+                    <p className="text-sm text-gray-500 truncate">📍 {[customer.address, customer.city, customer.country].filter(Boolean).join(", ")}</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
+          {/* Payment health card */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payment Health</p>
+              <span className="text-xs text-gray-400">{transactions.length} transactions</span>
+            </div>
+
+            {/* Progress bar */}
+            <div>
+              <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${payPct >= 100 ? "bg-green-500" : payPct >= 60 ? "bg-amber-400" : "bg-red-500"}`}
+                  style={{ width: `${payPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                <span>{payPct.toFixed(0)}% collected</span>
+                <span>of {inrFmt(totalAmount)}</span>
+              </div>
+            </div>
+
+            {/* 3-stat grid */}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100">
+              <div className="text-center">
+                <p className="text-[11px] text-gray-400 mb-0.5">Billed</p>
+                <p className="text-sm font-bold text-gray-800">{inrFmt(totalAmount)}</p>
+              </div>
+              <div className="text-center border-x border-gray-100">
+                <p className="text-[11px] text-gray-400 mb-0.5">Collected</p>
+                <p className="text-sm font-bold text-green-600">{inrFmt(totalPaid)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[11px] text-gray-400 mb-0.5">Pending</p>
+                <p className="text-sm font-bold text-red-500">{inrFmt(totalDue)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Pending dues alert ───────────────────────────────────── */}
+        {pendingTxns.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="text-amber-500 text-lg flex-shrink-0">⏰</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                {pendingTxns.length} unpaid transaction{pendingTxns.length > 1 ? "s" : ""}
+              </p>
+              <p className="text-xs text-amber-600">Total pending: {inrFmt(totalDue)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setCollectTx(pendingTxns[0]); setCollectError(""); }}
+              className="flex-shrink-0 px-4 py-2 text-xs font-bold bg-white border border-amber-400 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              Collect →
+            </button>
+          </div>
+        )}
+
+        {/* ── Tab section ─────────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+
+          {/* Tab bar */}
+          <div className="flex overflow-x-auto border-b border-gray-100 scrollbar-hide">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setSectionFilter(tab.key)}
+                className={`flex items-center gap-1.5 px-5 py-3.5 text-sm font-medium whitespace-nowrap flex-shrink-0 border-b-2 transition-all ${
+                  sectionFilter === tab.key
+                    ? "border-blue-600 text-blue-600 bg-blue-50/40"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${
+                    sectionFilter === tab.key ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Purchases tab ─────────────────────────────── */}
           {sectionFilter === "purchases" && (
-            <>
-              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-base font-semibold text-gray-800">{t("customer.transactionHistory")}</h2>
-                <p className="text-sm text-gray-500 mt-0.5">{t("customer.detailedViewPurchases")}</p>
-              </div>
+            <div className="p-4 space-y-3">
               {transactions.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className="text-gray-500">{t("customer.noTransactionsYet")}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableNo")}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableProducts")}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.purchaseDate")}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableAmount")}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableStatus")}</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t("customer.tableActions")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {transactions.map((txn, txnIndex) => (
-                    <React.Fragment key={txn.id}>
-                      <tr
-                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
-                        onClick={() => toggleTransaction(txn.id)}
+                <div className="py-16 text-center">
+                  <div className="text-5xl mb-3">🛍️</div>
+                  <p className="text-gray-500 font-semibold">{t("customer.noTransactionsYet")}</p>
+                  <p className="text-gray-400 text-sm mt-1">Click "Create Bill" to record the first transaction</p>
+                </div>
+              ) : (
+                [...transactions]
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map((txn, idx) => {
+                    const due     = txn.dueAmount || 0;
+                    const paid    = txn.paidAmount || 0;
+                    const total   = txn.grandTotal || 0;
+                    const isOpen  = expandedTransaction === txn.id;
+                    const isPaid  = due <= 0;
+                    const isPartial = paid > 0 && due > 0;
+
+                    return (
+                      <div
+                        key={txn.id}
+                        className={`rounded-xl border-2 transition-all ${
+                          isPaid ? "border-gray-100" : isPartial ? "border-amber-100" : "border-red-100"
+                        }`}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {txnIndex + 1}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {txn.products?.[0]?.productName || t("customer.noProduct")}
+                        {/* Card main row */}
+                        <div className="p-4">
+                          <div className="flex items-start gap-3">
+                            {/* Index badge */}
+                            <div className="w-8 h-8 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                              {transactions.length - idx}
                             </div>
+
+                            {/* Content */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-gray-900 text-sm">
+                                  {txn.products?.map((p) => p.productName).filter(Boolean).join(", ") || t("customer.noProduct")}
+                                </span>
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                                  isPaid
+                                    ? "bg-green-50 text-green-700 border-green-200"
+                                    : isPartial
+                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                    : "bg-red-50 text-red-700 border-red-200"
+                                }`}>
+                                  {isPaid ? "✓ Paid" : isPartial ? "Partial" : "Unpaid"}
+                                </span>
+                                {txn.billType && (
+                                  <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                                    {txn.billType}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-gray-400">
+                                <span>📅 {new Date(txn.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                                <span>{new Date(txn.date).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
+                                {txn.paymentMode && <span className="capitalize">💳 {txn.paymentMode}</span>}
+                              </div>
+                            </div>
+
+                            {/* Amount */}
+                            <div className="text-right flex-shrink-0">
+                              <p className="font-bold text-gray-900">{inrFmt(total)}</p>
+                              {!isPaid && (
+                                <p className="text-xs text-red-500 font-semibold">{inrFmt(due)} due</p>
+                              )}
+                              {isPaid && (
+                                <p className="text-xs text-green-600 font-semibold">Cleared</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action bar */}
+                          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-50">
                             <button
                               type="button"
-                              className="text-xs text-blue-600 hover:underline"
-                              onClick={(e) => { e.stopPropagation(); toggleTransaction(txn.id); }}
+                              onClick={() => toggleTransaction(txn.id)}
+                              className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
                             >
-                              {t("customer.viewDetails")}
+                              {isOpen ? "▲ Hide details" : "▼ View details"}
                             </button>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {new Date(txn.date).toLocaleDateString()}
-                          <span className="block text-xs text-gray-500">
-                            {new Date(txn.date).toLocaleTimeString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            ₹{(txn.grandTotal ?? 0).toFixed(2)}
-                          </div>
-                          <div className={`text-xs ${txn.dueAmount > 0 ? "text-red-600" : "text-green-600"}`}>
-                            {txn.dueAmount > 0 ? `₹${(txn.dueAmount ?? 0).toFixed(2)} ${t("customer.due")}` : t("customer.fullyPaid")}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                            txn.dueAmount > 0 ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"
-                          }`}>
-                            {txn.dueAmount > 0 ? t("customer.pending") : t("customer.completed")}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex-1" />
                             <button
                               type="button"
                               onClick={() => handleOpenInvoice(txn)}
-                              className="px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60"
+                              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
                             >
-                              {t("customer.invoice")}
+                              🧾 Invoice
                             </button>
                             <button
                               type="button"
                               onClick={() => handleEdit(txn)}
-                              className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300"
+                              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
                             >
-                              {t("customer.edit")}
+                              ✏ Edit
                             </button>
-                            {txn.dueAmount > 0 && (
+                            {!isPaid && (
                               <button
                                 type="button"
-                                onClick={() => handleFullyPaid(txn)}
-                                className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                                onClick={() => { setCollectTx(txn); setCollectError(""); }}
+                                className="px-3 py-1.5 text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors"
                               >
-                                {t("customer.fullyPay")}
+                                Collect due
                               </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </div>
 
-                      {expandedTransaction === txn.id && (
-                        <tr className="bg-gray-50">
-                          <td colSpan="6" className="px-6 py-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {txn.products.map((product, productIndex) => (
-                                <div key={productIndex} className="bg-white p-4 rounded-lg shadow-xs border border-gray-100">
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <h4 className="font-medium text-gray-800">
-                                        {productIndex + 1}. {product.productName}
-                                      </h4>
-                                      <p className="text-sm text-gray-500 capitalize">
-                                        {product.metalType} ({product.weight}g)
-                                      </p>
-                                    </div>
-                                    <span className="text-sm font-medium text-blue-600">
-                                      ₹{product.total.toFixed(2)}
-                                    </span>
-                                  </div>
-
-                                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                      <span className="text-gray-500">Rate:</span>
-                                      <span className="ml-2">₹{product.rate.toFixed(2)}/g</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Making:</span>
-                                      <span className="ml-2">₹{product.makingCharge.toFixed(2)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Diamond:</span>
-                                      <span className="ml-2">₹{product.diamondCharge.toFixed(2)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">GST ({product.gstPercent}%):</span>
-                                      <span className="ml-2">₹{product.gstAmount.toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
+                        {/* Expandable detail panel */}
+                        {isOpen && (
+                          <div className="border-t border-gray-100 bg-gray-50/60 rounded-b-xl px-4 py-4">
+                            {/* Product breakdown table */}
+                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Items</p>
+                            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                              <table className="w-full text-xs">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5 text-left text-gray-500 font-semibold">Item</th>
+                                    <th className="px-2 py-2.5 text-center text-gray-500 font-semibold">Metal</th>
+                                    <th className="px-2 py-2.5 text-right text-gray-500 font-semibold">Wt (g)</th>
+                                    <th className="px-2 py-2.5 text-right text-gray-500 font-semibold">Rate/g</th>
+                                    <th className="px-2 py-2.5 text-right text-gray-500 font-semibold">Making</th>
+                                    {txn.products?.some(p => (p.diamondCharge || 0) > 0) && (
+                                      <th className="px-2 py-2.5 text-right text-gray-500 font-semibold">Diamond</th>
+                                    )}
+                                    <th className="px-3 py-2.5 text-right text-gray-500 font-semibold">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(txn.products || []).map((p, pi) => (
+                                    <tr key={pi} className={pi % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                      <td className="px-3 py-2 font-medium text-gray-800">
+                                        {p.productName || "—"}
+                                        {p.qty && Number(p.qty) !== 1 && (
+                                          <span className="ml-1 text-gray-400">×{p.qty}</span>
+                                        )}
+                                      </td>
+                                      <td className="px-2 py-2 text-center text-gray-500 capitalize">{p.metalType || "—"}</td>
+                                      <td className="px-2 py-2 text-right text-gray-700">{p.weight != null ? Number(p.weight).toFixed(3) : "—"}</td>
+                                      <td className="px-2 py-2 text-right text-gray-700">{p.rate != null ? inrFmt(p.rate) : "—"}</td>
+                                      <td className="px-2 py-2 text-right text-gray-700">{p.makingCharge != null ? inrFmt(p.makingCharge) : "—"}</td>
+                                      {txn.products?.some(p2 => (p2.diamondCharge || 0) > 0) && (
+                                        <td className="px-2 py-2 text-right text-gray-700">{p.diamondCharge != null ? inrFmt(p.diamondCharge) : "—"}</td>
+                                      )}
+                                      <td className="px-3 py-2 text-right font-bold text-gray-900">{p.total != null ? inrFmt(p.total) : "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+
+                            {/* Payment summary strip */}
+                            <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-200 text-center">
+                              <div>
+                                <p className="text-[11px] text-gray-400">Grand Total</p>
+                                <p className="text-sm font-bold text-gray-900">{inrFmt(total)}</p>
+                              </div>
+                              <div className="border-x border-gray-200">
+                                <p className="text-[11px] text-gray-400">Paid</p>
+                                <p className="text-sm font-bold text-green-600">{inrFmt(paid)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] text-gray-400">Due</p>
+                                <p className={`text-sm font-bold ${due > 0 ? "text-red-500" : "text-gray-400"}`}>
+                                  {due > 0 ? inrFmt(due) : "Cleared"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
             </div>
           )}
-          </>
-          )}
+
+          {/* ── Girvi tab ─────────────────────────────────── */}
           {sectionFilter === "girvi" && (
             <>
-              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterGirvi")}</h2>
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-sm font-semibold text-gray-800">{t("customer.filterGirvi")}</h2>
               </div>
               {girviLoans.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">{t("customer.noGirviFound")}</div>
+                <div className="py-16 text-center text-gray-400">{t("customer.noGirviFound")}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.girviDescription")}</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.girviPrincipal")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.girviStartDate")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
+                        {[t("customer.tableNo"), t("customer.girviDescription"), t("customer.girviPrincipal"), t("customer.girviStartDate"), t("customer.orderStatus")].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {girviLoans.map((loan, i) => (
-                        <tr key={loan.id}>
-                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
-                          <td className="px-4 py-3 text-gray-700 max-w-xs">{loan.jewelry_description}</td>
-                          <td className="px-4 py-3 text-right font-medium">{formatRupee(loan.principal_amount)}</td>
-                          <td className="px-4 py-3 text-gray-600">{formatDate(loan.start_date)}</td>
+                        <tr key={loan.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-500">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-800 max-w-xs">{loan.jewelry_description}</td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">{formatRupee(loan.principal_amount)}</td>
+                          <td className="px-4 py-3 text-gray-500">{formatDate(loan.start_date)}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${loan.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
+                            <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${loan.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                               {loan.status}
                             </span>
                           </td>
@@ -518,39 +572,38 @@ const CustomerAccount = () => {
               )}
             </>
           )}
+
+          {/* ── Orders tab ────────────────────────────────── */}
           {sectionFilter === "orders" && (
             <>
-              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterOrders")}</h2>
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-sm font-semibold text-gray-800">{t("customer.filterOrders")}</h2>
               </div>
               {ordersNew.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">{t("customer.noOrdersFound")}</div>
+                <div className="py-16 text-center text-gray-400">{t("customer.noOrdersFound")}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderItem")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderDescription")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderExpectedDate")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.orderAmount")}</th>
+                        {[t("customer.tableNo"), t("customer.orderItem"), t("customer.orderDescription"), t("customer.orderExpectedDate"), t("customer.orderStatus"), t("customer.orderAmount")].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {ordersNew.map((ord, i) => (
-                        <tr key={ord.id}>
-                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
-                          <td className="px-4 py-3 text-gray-700">{ord.item_description || "—"}</td>
-                          <td className="px-4 py-3 text-gray-600 max-w-xs">{ord.description || "—"}</td>
-                          <td className="px-4 py-3 text-gray-600">{formatDate(ord.expected_date)}</td>
+                        <tr key={ord.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-500">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-800">{ord.item_description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 max-w-xs">{ord.description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-500">{formatDate(ord.expected_date)}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${ord.status === "delivered" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                            <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${ord.status === "delivered" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                               {ord.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -559,39 +612,124 @@ const CustomerAccount = () => {
               )}
             </>
           )}
+
+          {/* ── Repairs tab ───────────────────────────────── */}
           {sectionFilter === "repairs" && (
             <>
-              <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-base font-semibold text-gray-800">{t("customer.filterRepairs")}</h2>
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-sm font-semibold text-gray-800">{t("customer.filterRepairs")}</h2>
               </div>
               {ordersRepair.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">{t("customer.noRepairsFound")}</div>
+                <div className="py-16 text-center text-gray-400">{t("customer.noRepairsFound")}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.tableNo")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderItem")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderDescription")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderExpectedDate")}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("customer.orderStatus")}</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("customer.orderAmount")}</th>
+                        {[t("customer.tableNo"), t("customer.orderItem"), t("customer.orderDescription"), t("customer.orderExpectedDate"), t("customer.orderStatus"), t("customer.orderAmount")].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {ordersRepair.map((ord, i) => (
-                        <tr key={ord.id}>
-                          <td className="px-4 py-3 text-gray-900">{i + 1}</td>
-                          <td className="px-4 py-3 text-gray-700">{ord.item_description || "—"}</td>
-                          <td className="px-4 py-3 text-gray-600 max-w-xs">{ord.description || "—"}</td>
-                          <td className="px-4 py-3 text-gray-600">{formatDate(ord.expected_date)}</td>
+                        <tr key={ord.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-500">{i + 1}</td>
+                          <td className="px-4 py-3 text-gray-800">{ord.item_description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 max-w-xs">{ord.description || "—"}</td>
+                          <td className="px-4 py-3 text-gray-500">{formatDate(ord.expected_date)}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${ord.status === "delivered" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                            <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${ord.status === "delivered" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                               {ord.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">{ord.amount_charged != null ? formatRupee(ord.amount_charged) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Metal Advance tab ─────────────────────────── */}
+          {sectionFilter === "metalAdvance" && (
+            <>
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-sm font-semibold text-gray-800">{t("customer.metalAdvanceTab")}</h2>
+              </div>
+              {advanceBalanceRow && (
+                <div className="grid grid-cols-2 gap-4 px-5 py-4 bg-amber-50/50 border-b border-gray-100">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold mb-1">{t("customer.metalAdvanceMetal")}</p>
+                    <p className="text-lg font-bold text-gray-900">{(advanceBalanceRow.advance_metal_weight ?? 0).toFixed(3)} g</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold mb-1">{t("customer.metalAdvanceMoney")}</p>
+                    <p className="text-lg font-bold text-gray-900">{formatRupee(advanceBalanceRow.advance_money ?? 0)}</p>
+                  </div>
+                </div>
+              )}
+              {metalAdvanceRows.length === 0 ? (
+                <div className="py-16 text-center text-gray-400">{t("customer.noMetalAdvanceEntries")}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {[t("customer.metalColDate"), t("customer.metalColType"), t("customer.metalColMetal"), t("customer.metalColRawG"), t("customer.metalColPureG"), t("customer.metalColCash"), t("customer.metalColNotes")].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {metalAdvanceRows.map((row) => (
+                        <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-500">{row.exchange_date ? new Date(row.exchange_date).toLocaleDateString("en-IN") : "—"}</td>
+                          <td className="px-4 py-3 font-medium text-gray-800">{METAL_TYPE_LABELS[row.type] || row.type}</td>
+                          <td className="px-4 py-3 text-gray-700">{row.metal_type || "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.raw_weight ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.pure_weight ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.cash_amount != null ? formatRupee(row.cash_amount) : "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 max-w-xs">{row.notes || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Metal Exchange tab ────────────────────────── */}
+          {sectionFilter === "metalExchange" && (
+            <>
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-sm font-semibold text-gray-800">{t("customer.metalExchangeTab")}</h2>
+              </div>
+              {metalTradeRows.length === 0 ? (
+                <div className="py-16 text-center text-gray-400">{t("customer.noMetalExchangeEntries")}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {[t("customer.metalColDate"), t("customer.metalColType"), t("customer.metalColMetal"), t("customer.metalColRawG"), t("customer.metalColPureG"), t("customer.metalColCash"), t("customer.metalColNotes")].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {metalTradeRows.map((row) => (
+                        <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-500">{row.exchange_date ? new Date(row.exchange_date).toLocaleDateString("en-IN") : "—"}</td>
+                          <td className="px-4 py-3 font-medium text-gray-800">{METAL_TYPE_LABELS[row.type] || row.type}</td>
+                          <td className="px-4 py-3 text-gray-700">{row.metal_type || "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.raw_weight ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.pure_weight ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">{row.cash_amount != null ? formatRupee(row.cash_amount) : "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 max-w-xs">{row.notes || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -601,82 +739,84 @@ const CustomerAccount = () => {
             </>
           )}
         </div>
-      </div>
-       {/* Edit Modal */}
-     {showEditModal && selectedTransaction && (
-      <EditProductPopup
-      productData={selectedTransaction}
-      isOpen={showEditModal}
-      onUpdate={handleUpdateTransaction}
-      onClose={handleCloseModal}
-      />
-    )}
 
-      {/* Invoice Modal */}
-      {showInvoiceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={handleCloseInvoiceModal}>
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">{t("customer.purchaseOrder")}</h3>
-              <button type="button" onClick={handleCloseInvoiceModal} className="text-gray-500 hover:text-gray-700 p-1">×</button>
-            </div>
-            {invoiceError && (
-              <div className="px-6 pt-2">
-                <InlineError message={invoiceError} onDismiss={() => setInvoiceError("")} />
-              </div>
-            )}
-            <div className="p-6 overflow-y-auto flex-1">
-              {invoiceLoading ? (
-                <div className="flex justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-500 border-t-transparent" />
-                </div>
-              ) : invoiceData?.transaction ? (
-                <div className="space-y-4">
-                  {invoiceData.storeName && <p className="text-sm text-gray-600">{invoiceData.storeName}</p>}
-                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.customerLabel")}:</span> {invoiceData.transaction.customerName}</p>
-                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.date")}:</span> {invoiceData.transaction.date ? new Date(invoiceData.transaction.date).toLocaleString() : "-"}</p>
-                  <p className="text-sm"><span className="font-medium text-gray-500">{t("customer.orderNo")}</span> #{invoiceData.transaction.id}</p>
-                  <table className="min-w-full text-sm border border-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left border-b">{t("customer.tableNo")}</th>
-                        <th className="px-3 py-2 text-left border-b">{t("customer.invoiceProduct")}</th>
-                        <th className="px-3 py-2 text-left border-b">{t("customer.tableWeight")}</th>
-                        <th className="px-3 py-2 text-right border-b">{t("customer.tableRate")}</th>
-                        <th className="px-3 py-2 text-right border-b">{t("customer.tableAmount")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(invoiceData.transaction.products || []).map((p, i) => (
-                        <tr key={i} className="border-b border-gray-100">
-                          <td className="px-3 py-2">{i + 1}</td>
-                          <td className="px-3 py-2">{p.productName || "-"}</td>
-                          <td className="px-3 py-2">{p.weight ?? "-"}</td>
-                          <td className="px-3 py-2 text-right">{p.rate != null ? `₹${Number(p.rate).toFixed(2)}` : "-"}</td>
-                          <td className="px-3 py-2 text-right">{p.total != null ? `₹${Number(p.total).toFixed(2)}` : "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="pt-2 space-y-1 text-sm">
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.grandTotal")}</span> <span>₹{Number(invoiceData.transaction.grandTotal || 0).toFixed(2)}</span></p>
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.paidAmount")}</span> <span className="text-green-600">₹{Number(invoiceData.transaction.paidAmount || 0).toFixed(2)}</span></p>
-                    <p className="flex justify-between"><span className="font-medium text-gray-600">{t("customer.dueAmount")}</span> <span>₹{Number(invoiceData.transaction.dueAmount || 0).toFixed(2)}</span></p>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center py-4">{t("customer.couldNotLoadInvoice")}</p>
-              )}
-            </div>
-            {invoiceData?.transaction && (
-              <div className="px-6 py-4 border-t border-gray-200 flex gap-2">
-                <button type="button" onClick={handlePrintInvoice} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">{t("customer.print")}</button>
-                <button type="button" onClick={handleDownloadInvoicePdf} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">{t("customer.downloadPdf")}</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        {/* ── Collect Payment Modal ────────────────────────────────── */}
+        <CollectPaymentModal
+          tx={collectTx}
+          onClose={() => { setCollectTx(null); setCollectError(""); }}
+          onSubmit={async (amount, mode) => {
+            const due = parseFloat(collectTx?.dueAmount ?? 0);
+            if (!amount || amount <= 0) return setCollectError("Enter a valid amount");
+            if (amount > due + 0.01) return setCollectError(`Cannot collect more than due ₹${due.toFixed(2)}`);
+            setCollectLoading(true);
+            setCollectError("");
+            try {
+              const newPaid = (parseFloat(collectTx.paidAmount ?? 0) + amount);
+              const newDue  = Math.max(0, due - amount);
+              const res = await fetch(`${API_BASE}/api/transactions/${collectTx.id}/record-payment`, {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ amount, payment_mode: mode, notes: "" }),
+              });
+              if (res.status === 401) { navigate("/login"); return; }
+              if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(parseApiError(errData, "Failed to record payment. Please try again."));
+              }
+              await res.json();
+              setTransactions((prev) =>
+                prev.map((t) =>
+                  t.id === collectTx.id
+                    ? { ...t, paidAmount: newPaid, dueAmount: newDue, paid_amount: newPaid, due_amount: newDue }
+                    : t
+                )
+              );
+              setCollectTx(null);
+            } catch (e) {
+              setCollectError(e.message);
+            } finally {
+              setCollectLoading(false);
+            }
+          }}
+          loading={collectLoading}
+          error={collectError}
+          inrFmt={inrFmt}
+        />
+
+        {/* ── Edit Transaction Modal ───────────────────────────────── */}
+        {showEditModal && selectedTransaction && (
+          <EditProductPopup
+            productData={selectedTransaction}
+            isOpen={showEditModal}
+            onUpdate={handleUpdateTransaction}
+            onClose={handleCloseModal}
+          />
+        )}
+
+        {/* ── Invoice Modal ────────────────────────────────────────── */}
+        <InvoicePreviewModal
+          isOpen={showInvoiceModal}
+          onClose={handleCloseInvoiceModal}
+          transactionId={invoiceTransactionId}
+          invoiceData={invoiceData}
+          loading={invoiceLoading}
+          error={invoiceError}
+          onErrorDismiss={() => setInvoiceError("")}
+          t={t}
+        />
+
+        {/* ── Edit Customer Drawer ─────────────────────────────────── */}
+        <AddCustomerDrawer
+          isOpen={showEditCustomer}
+          onClose={() => setShowEditCustomer(false)}
+          initialData={customer}
+          onAdd={(updated) => {
+            setCustomer((prev) => ({ ...prev, ...updated }));
+            setShowEditCustomer(false);
+          }}
+        />
+
+      </div>
     </div>
   );
 };

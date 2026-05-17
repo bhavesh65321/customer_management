@@ -1,48 +1,102 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import ShopLayout from "../../components/layout/ShopLayout";
 import { API_BASE, authHeaders } from "../../api";
+
+const PURITY_OPTIONS = {
+  gold: [
+    { label: "24K — 99.9%", value: 99.9 },
+    { label: "22K — 91.6%", value: 91.6 },
+    { label: "18K — 75.0%", value: 75.0 },
+    { label: "14K — 58.5%", value: 58.5 },
+  ],
+  silver: [
+    { label: "999 — 99.9%", value: 99.9 },
+    { label: "925 Sterling — 92.5%", value: 92.5 },
+    { label: "800 — 80.0%", value: 80.0 },
+  ],
+};
+
+const EMPTY_FORM = {
+  name: "", category_id: "", metal_type: "gold",
+  purity_percent: "91.6", gross_weight_g: "", net_weight_g: "",
+  huid: "", stone_details: "", making_charge_per_g: "",
+  unit: "piece", min_quantity: "", reorder_weight_g: "",
+  description: "", unit_price: "",
+};
 
 export default function StockNewItemPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    category: "",
-    metal_type: "gold",
-    unit: "piece",
-    min_quantity: "",
-  });
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatIcon, setNewCatIcon] = useState("");
+  const [addingCat, setAddingCat] = useState(false);
 
-  const handleChange = (e) => {
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stock/categories`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setCategories(Array.isArray(d) ? d : []));
+  }, []);
+
+  const handleChange = e => {
     const { name, value } = e.target;
-    setForm((f) => ({ ...f, [name]: value }));
+    setForm(f => ({ ...f, [name]: value }));
+    if (name === "metal_type" && PURITY_OPTIONS[value]) {
+      setForm(f => ({ ...f, [name]: value, purity_percent: String(PURITY_OPTIONS[value][0].value) }));
+    }
   };
 
-  const handleSubmit = async (e) => {
+  const addCategory = async () => {
+    if (!newCatName.trim()) return;
+    setAddingCat(true);
+    const res = await fetch(`${API_BASE}/api/stock/categories`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ name: newCatName.trim(), icon: newCatIcon.trim() || null }),
+    });
+    if (res.ok) {
+      const cat = await res.json();
+      setCategories(prev => [...prev, cat]);
+      setForm(f => ({ ...f, category_id: String(cat.id) }));
+      setNewCatName("");
+      setNewCatIcon("");
+    }
+    setAddingCat(false);
+  };
+
+  const handleSubmit = async e => {
     e.preventDefault();
     setError("");
-    if (!form.name.trim()) {
-      setError("Enter item name.");
-      return;
-    }
+    if (!form.name.trim()) { setError("Item name is required."); return; }
     setLoading(true);
     try {
+      const body = {
+        name: form.name.trim(),
+        category_id: form.category_id ? parseInt(form.category_id) : null,
+        metal_type: form.metal_type || null,
+        purity_percent: form.purity_percent ? parseFloat(form.purity_percent) : null,
+        gross_weight_g: form.gross_weight_g ? parseFloat(form.gross_weight_g) : null,
+        net_weight_g: form.net_weight_g ? parseFloat(form.net_weight_g) : null,
+        huid: form.huid.trim() || null,
+        stone_details: form.stone_details.trim() || null,
+        making_charge_per_g: form.making_charge_per_g ? parseFloat(form.making_charge_per_g) : null,
+        unit: form.unit,
+        min_quantity: form.min_quantity ? parseFloat(form.min_quantity) : null,
+        reorder_weight_g: form.reorder_weight_g ? parseFloat(form.reorder_weight_g) : null,
+        description: form.description.trim() || null,
+        unit_price: form.unit_price ? parseFloat(form.unit_price) : null,
+      };
       const res = await fetch(`${API_BASE}/api/stock/items`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({
-          name: form.name.trim(),
-          category: form.category.trim() || null,
-          metal_type: form.metal_type,
-          unit: form.unit,
-          min_quantity: form.min_quantity ? parseFloat(form.min_quantity) : null,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to create");
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "Failed to create item");
       }
       navigate("/stock");
     } catch (err) {
@@ -52,90 +106,173 @@ export default function StockNewItemPage() {
     }
   };
 
+  const purities = PURITY_OPTIONS[form.metal_type] || [];
+
   return (
     <ShopLayout>
-      <div className="max-w-xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">New Stock Item</h1>
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 space-y-4">
-          {error && (
-            <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
-          )}
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => navigate("/stock")} className="text-gray-400 hover:text-gray-600">
+            ← Back
+          </button>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              placeholder="e.g. 22K Ring"
-            />
+            <h1 className="text-xl font-bold text-gray-900">Add Stock Item</h1>
+            <p className="text-sm text-gray-500">Fill in the details for the new jewellery piece or material.</p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-            <input
-              type="text"
-              name="category"
-              value={form.category}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              placeholder="e.g. Ring, Chain"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>}
+
+          {/* Basic Info */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <h2 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Basic Info</h2>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Metal</label>
-              <select
-                name="metal_type"
-                value={form.metal_type}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              >
-                <option value="gold">Gold</option>
-                <option value="silver">Silver</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+              <input name="name" value={form.name} onChange={handleChange} required
+                placeholder="e.g. 22K Gold Ring (Peacock Design)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-              <select
-                name="unit"
-                value={form.unit}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              >
-                <option value="piece">Piece</option>
-                <option value="gram">Gram</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <input name="description" value={form.description} onChange={handleChange}
+                placeholder="Short description (optional)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <div className="flex gap-2">
+                <select name="category_id" value={form.category_id} onChange={handleChange}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none">
+                  <option value="">No category</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ""}{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2 mt-2">
+                <input value={newCatIcon} onChange={e => setNewCatIcon(e.target.value)}
+                  placeholder="Emoji (optional)"
+                  className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                  placeholder="New category name…"
+                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none" />
+                <button type="button" onClick={addCategory} disabled={addingCat || !newCatName.trim()}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 disabled:opacity-50">
+                  {addingCat ? "…" : "Add"}
+                </button>
+              </div>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Min quantity (low stock alert)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              name="min_quantity"
-              value={form.min_quantity}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              placeholder="Alert when below this"
-            />
+
+          {/* Metal & Purity */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <h2 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Metal & Purity</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Metal Type</label>
+                <select name="metal_type" value={form.metal_type} onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none">
+                  <option value="">None</option>
+                  <option value="gold">Gold</option>
+                  <option value="silver">Silver</option>
+                  <option value="diamond">Diamond</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purity</label>
+                {purities.length > 0 ? (
+                  <select name="purity_percent" value={form.purity_percent} onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none">
+                    {purities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
+                ) : (
+                  <input name="purity_percent" value={form.purity_percent} onChange={handleChange}
+                    placeholder="e.g. 91.6"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gross Weight (g)</label>
+                <input name="gross_weight_g" value={form.gross_weight_g} onChange={handleChange}
+                  type="number" step="0.001" placeholder="0.000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Net Weight (g)</label>
+                <input name="net_weight_g" value={form.net_weight_g} onChange={handleChange}
+                  type="number" step="0.001" placeholder="0.000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">HUID</label>
+                <input name="huid" value={form.huid} onChange={handleChange}
+                  placeholder="Hallmark Unique ID"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Making Charge (₹/g)</label>
+                <input name="making_charge_per_g" value={form.making_charge_per_g} onChange={handleChange}
+                  type="number" step="0.01" placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stone Details</label>
+              <input name="stone_details" value={form.stone_details} onChange={handleChange}
+                placeholder="e.g. 2 diamonds 0.15ct SI2"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+            </div>
           </div>
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Saving..." : "Add Item"}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/stock")}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
+
+          {/* Inventory Settings */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <h2 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Inventory Settings</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <select name="unit" value={form.unit} onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none">
+                  <option value="piece">piece</option>
+                  <option value="gram">gram</option>
+                  <option value="set">set</option>
+                  <option value="pair">pair</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Min Qty Alert</label>
+                <input name="min_quantity" value={form.min_quantity} onChange={handleChange}
+                  type="number" step="0.001" placeholder="e.g. 2"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Weight (g)</label>
+                <input name="reorder_weight_g" value={form.reorder_weight_g} onChange={handleChange}
+                  type="number" step="0.001" placeholder="e.g. 50"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price (₹)</label>
+              <input name="unit_price" value={form.unit_price} onChange={handleChange}
+                type="number" step="0.01" placeholder="Optional — for non-gold items"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button type="button" onClick={() => navigate("/stock")}
+              className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
               Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+              {loading ? "Saving…" : "Save Item"}
             </button>
           </div>
         </form>

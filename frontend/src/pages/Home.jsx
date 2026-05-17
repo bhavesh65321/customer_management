@@ -3,86 +3,101 @@ import { Link } from "react-router-dom";
 import ShopLayout from "../components/layout/ShopLayout";
 import { SHOP_MENU_SECTIONS } from "../constants/shopMenu";
 import { API_BASE, authHeaders, getToken, parseJwt } from "../api";
-import { formatDate } from "../utils/format";
 import { useLanguage } from "../context/LanguageContext";
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  return Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+}
 
 export default function Home() {
   const { t } = useLanguage();
   const [company, setCompany] = useState(null);
 
+  const token = getToken();
+  const payload = token ? parseJwt(token) : null;
+  const userName = payload?.name || payload?.sub?.split("@")[0] || "there";
+  const userRole = payload?.role || "staff";
+  const storeId = payload?.store_id;
+
   useEffect(() => {
-    const token = getToken();
-    const payload = token ? parseJwt(token) : null;
-    const storeId = payload?.store_id;
     if (!storeId) return;
     fetch(`${API_BASE}/api/stores/me`, { headers: authHeaders() })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => data && setCompany(data))
-      .catch(() => setCompany(null));
-  }, []);
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setCompany(d))
+      .catch(() => {});
+  }, [storeId]);
+
+  const days = company ? daysUntil(company.license_expiry) : null;
+  const expiryBadge =
+    days == null ? null
+    : days < 0   ? { label: `Expired ${Math.abs(days)}d ago`, cls: "bg-red-50 text-red-600 border-red-200" }
+    : days <= 30 ? { label: `Expires in ${days}d`, cls: "bg-amber-50 text-amber-700 border-amber-200" }
+    : { label: `License valid`, cls: "bg-green-50 text-green-700 border-green-200" };
 
   return (
     <ShopLayout>
+
+      {/* ── Top bar: greeting + store name ─────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"},{" "}
+            <span className="text-indigo-600">{userName !== "there" ? userName : "there"}</span>
+          </h1>
+          <p className="text-sm text-gray-400 mt-0.5 capitalize">
+            {userRole}
+            {company?.name ? ` · ${company.name}` : ""}
+          </p>
+        </div>
+
+        {expiryBadge && (
+          <span className={`text-xs font-medium px-2.5 py-1 rounded border ${expiryBadge.cls}`}>
+            {expiryBadge.label}
+          </span>
+        )}
+      </div>
+
+      {/* ── Store info strip (only when loaded) ────────────────────────── */}
       {company && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">{t("common.yourCompany")}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="text-gray-500">{t("common.name")}</span>
-              <p className="font-medium text-gray-900">{company.name}</p>
-            </div>
-            {company.customer_code && (
-              <div>
-                <span className="text-gray-500">{t("common.customerId")}</span>
-                <p className="font-medium text-gray-900">{company.customer_code}</p>
-              </div>
-            )}
-            {company.location && (
-              <div>
-                <span className="text-gray-500">{t("common.location")}</span>
-                <p className="font-medium text-gray-900">{company.location}</p>
-              </div>
-            )}
-            {company.license_type && (
-              <div>
-                <span className="text-gray-500">{t("common.license")}</span>
-                <p className="font-medium text-gray-900 capitalize">{company.license_type}</p>
-              </div>
-            )}
-            {formatDate(company.join_date, null) && (
-              <div>
-                <span className="text-gray-500">{t("common.joiningDate")}</span>
-                <p className="font-medium text-gray-900">{formatDate(company.join_date)}</p>
-              </div>
-            )}
-            {company.address && (
-              <div className="sm:col-span-2">
-                <span className="text-gray-500">{t("common.address")}</span>
-                <p className="font-medium text-gray-900">{company.address}</p>
-              </div>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-6 text-sm text-gray-500 mb-8 pb-6 border-b border-gray-100">
+          {company.location && (
+            <span>📍 {company.location}</span>
+          )}
+          {company.contact_phone && (
+            <span>📞 {company.contact_phone}</span>
+          )}
+          {company.gstin && (
+            <span className="font-mono">GST: {company.gstin}</span>
+          )}
+          {company.license_type && (
+            <span className="capitalize">Plan: {company.license_type}</span>
+          )}
         </div>
       )}
 
-      <h1 className="text-2xl font-bold mb-6">{t("common.welcomeBack")}</h1>
-      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      {/* ── Module grid ────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {SHOP_MENU_SECTIONS.map((section) => {
           const firstLink = section.items[0]?.to;
+          const Icon = section.icon;
           return (
             <Link
               key={section.labelKey || section.label}
               to={firstLink || "#"}
-              className="bg-white rounded-lg shadow p-6 flex flex-col items-center hover:shadow-md transition"
+              className="group flex flex-col items-center gap-2.5 p-5 rounded-xl border border-gray-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors"
             >
-              <section.icon className="h-10 w-10 text-blue-600 mb-4" />
-              <span className="text-lg font-medium text-center">
+              <div className="w-10 h-10 rounded-lg bg-gray-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                <Icon className="h-5 w-5 text-gray-500 group-hover:text-indigo-600 transition-colors" />
+              </div>
+              <span className="text-[13px] font-medium text-gray-700 group-hover:text-indigo-700 text-center leading-tight transition-colors">
                 {t(`menu.${section.labelKey}`)}
               </span>
             </Link>
           );
         })}
       </div>
+
     </ShopLayout>
   );
 }

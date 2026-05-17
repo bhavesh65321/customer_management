@@ -1,23 +1,27 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Query, HTTPException, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 
 from config.database import get_db
-from dependencies import require_staff
+from dependencies import require_manager
 from core.db_filters import apply_store_filter
 from models.transactional import Transaction
 
 router = APIRouter(tags=["Analytics"])
 
+_CACHE_60S = "public, max-age=60, stale-while-revalidate=30"
+
 
 @router.get("/summary")
 def get_summary(
+    response: Response,
     from_date: str = Query(None, description="YYYY-MM-DD"),
     to_date: str = Query(None, description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
+    response.headers["Cache-Control"] = _CACHE_60S
     q = db.query(Transaction)
     q = apply_store_filter(q, Transaction, payload)
     if from_date:
@@ -46,11 +50,13 @@ def get_summary(
 
 @router.get("/daily")
 def get_daily(
+    response: Response,
     from_date: str = Query(None, description="YYYY-MM-DD"),
     to_date: str = Query(None, description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
+    response.headers["Cache-Control"] = _CACHE_60S
     q = db.query(
         func.date(Transaction.date).label("day"),
         func.count(Transaction.id).label("count"),
@@ -79,10 +85,12 @@ def get_daily(
 
 @router.get("/monthly")
 def get_monthly(
+    response: Response,
     year: int = Query(None, description="Filter by year e.g. 2024"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
+    response.headers["Cache-Control"] = _CACHE_60S
     q = db.query(
         extract("year", Transaction.date).label("year"),
         extract("month", Transaction.date).label("month"),
@@ -107,9 +115,11 @@ def get_monthly(
 
 @router.get("/yearly")
 def get_yearly(
+    response: Response,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
+    response.headers["Cache-Control"] = _CACHE_60S
     q = db.query(
         extract("year", Transaction.date).label("year"),
         func.count(Transaction.id).label("count"),
@@ -128,7 +138,7 @@ def get_yearly(
 def get_daily_sales(
     date: str = Query(..., description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
     try:
         day_start = datetime.strptime(date, "%Y-%m-%d")
@@ -157,10 +167,12 @@ def get_daily_sales(
 
 @router.get("/customer-analytics")
 def get_customer_analytics(
+    response: Response,
     limit: int = Query(20, le=100),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_staff),
+    payload: dict = Depends(require_manager),
 ):
+    response.headers["Cache-Control"] = _CACHE_60S
     store_id = payload.get("store_id")
     q = (
         db.query(

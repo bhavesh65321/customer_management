@@ -1,0 +1,94 @@
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: customer_mgmt_db_prod
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data_prod:/var/lib/mysql
+    networks:
+      - customer_mgmt_network_prod
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API
+  backend:
+    image: ${DOCKER_REGISTRY}/customer-management-backend:${IMAGE_TAG:-latest}
+    container_name: customer_mgmt_backend_prod
+    environment:
+      DATABASE_URL: "mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}"
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ENV: production
+      DEBUG: False
+    ports:
+      - "8000:8000"
+    networks:
+      - customer_mgmt_network_prod
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+
+  # Frontend React App
+  frontend:
+    image: ${DOCKER_REGISTRY}/customer-management-frontend:${IMAGE_TAG:-latest}
+    container_name: customer_mgmt_frontend_prod
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    networks:
+      - customer_mgmt_network_prod
+    depends_on:
+      - backend
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  customer_mgmt_network_prod:
+    driver: bridge
+
+volumes:
+  mysql_data_prod:
+    driver: local

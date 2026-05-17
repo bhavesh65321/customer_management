@@ -6,19 +6,28 @@ from models.invoice import Invoice
 from schemas.transaction_schema import TransactionCreate, TransactionResponse, TransactionUpdate
 
 
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+from datetime import datetime
+from models.transactional import Transaction
+from models.invoice import Invoice
+from schemas.transaction_schema import TransactionCreate, TransactionResponse, TransactionUpdate
+
+
 def create_transaction(db: Session, transaction_data: TransactionCreate, store_id: int = None):
+    # Validate totals before touching the DB
+    product_sum = sum(p.total for p in transaction_data.products) if transaction_data.products else 0
+    if abs(transaction_data.grandTotal - product_sum) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"grandTotal must equal sum of product totals (got {transaction_data.grandTotal}, sum={product_sum})",
+        )
+    if abs((transaction_data.paidAmount + transaction_data.dueAmount) - transaction_data.grandTotal) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail="paidAmount + dueAmount must equal grandTotal",
+        )
     try:
-        product_sum = sum(p.total for p in transaction_data.products) if transaction_data.products else 0
-        if abs(transaction_data.grandTotal - product_sum) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"grandTotal must equal sum of product totals (got {transaction_data.grandTotal}, sum={product_sum})",
-            )
-        if abs((transaction_data.paidAmount + transaction_data.dueAmount) - transaction_data.grandTotal) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail="paidAmount + dueAmount must equal grandTotal",
-            )
         db_transaction = Transaction(
             customer_id=transaction_data.customerId,
             customer_name=transaction_data.customerName,
@@ -40,50 +49,56 @@ def create_transaction(db: Session, transaction_data: TransactionCreate, store_i
         return db_transaction
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
-def get_transactions(db: Session, customer_id: int = None, store_id: int = None, skip: int = 0, limit: int = 50):
-    try:
-        query = db.query(Transaction)
-        if store_id is not None:
-            query = query.filter(Transaction.store_id == store_id)
-        if customer_id:
-            query = query.filter(Transaction.customer_id == customer_id)
-        transactions = query.offset(skip).limit(limit).all()
+def get_transactions(db: Session, customer_id: int = None, store_id: int = None, is_admin: bool = False, skip: int = 0, limit: int = 200):
+    query = db.query(Transaction)
+    if store_id is not None:
+        # Normal case: filter to user's store
+        query = query.filter(Transaction.store_id == store_id)
+    elif not is_admin:
+        # Staff/manager with no store → see nothing (misconfigured account)
+        from sqlalchemy import false as sql_false
+        query = query.filter(sql_false())
+    # admin with store_id=None and is_admin=True → no store filter (sees all)
+    if customer_id:
+        query = query.filter(Transaction.customer_id == customer_id)
+    transactions = query.order_by(Transaction.date.desc()).offset(skip).limit(limit).all()
 
-        response = []
-        for txn in transactions:
-            products = [
-                {
-                    "productName": p["productName"],
-                    "metalType": p["metalType"],
-                    "weight": p["weight"],
-                    "rate": p["rate"],
-                    "makingCharge": p["makingCharge"],
-                    "diamondCharge": p["diamondCharge"],
-                    "gstPercent": p["gstPercent"],
-                    "metalValue": p["metalValue"],
-                    "gstAmount": p["gstAmount"],
-                    "total": p["total"],
-                }
-                for p in txn.products
-            ]
-            response.append(TransactionResponse(
-                id=txn.id,
-                customerId=txn.customer_id,
-                customerName=txn.customer_name,
-                products=products,
-                paidAmount=txn.paid_amount,
-                dueAmount=txn.due_amount,
-                grandTotal=txn.grand_total,
-                date=txn.date,
-                billType=txn.bill_type,
-                billPhotoUrl=txn.bill_photo_url,
-            ))
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    response = []
+    for txn in transactions:
+        products = [
+            {
+                # Use .get() to safely handle legacy records missing newer fields
+                "productName":  p.get("productName"),
+                "metalType":    p.get("metalType"),
+                "weight":       p.get("weight"),
+                "qty":          p.get("qty", 1),
+                "rate":         p.get("rate"),
+                "makingCharge": p.get("makingCharge"),
+                "diamondCharge":p.get("diamondCharge"),
+                "gstPercent":   p.get("gstPercent"),
+                "metalValue":   p.get("metalValue"),
+                "gstAmount":    p.get("gstAmount"),
+                "total":        p.get("total"),
+                "pieceId":      p.get("pieceId"),
+            }
+            for p in (txn.products or [])
+        ]
+        response.append(TransactionResponse(
+            id=txn.id,
+            customerId=txn.customer_id,
+            customerName=txn.customer_name,
+            products=products,
+            paidAmount=txn.paid_amount,
+            dueAmount=txn.due_amount,
+            grandTotal=txn.grand_total,
+            date=txn.date,
+            billType=txn.bill_type,
+            billPhotoUrl=txn.bill_photo_url,
+        ))
+    return response
 
 
 def update_transaction(db: Session, transaction_id: int, transaction_data: TransactionUpdate):
@@ -105,10 +120,10 @@ def update_transaction(db: Session, transaction_id: int, transaction_data: Trans
         if not transaction_data.products:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one product is required")
         for product in transaction_data.products:
-            if product.weight <= 0 or product.rate <= 0:
+            if product.rate < 0 or product.weight < 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Product weight and rate must be positive",
+                    detail="Product weight and rate cannot be negative",
                 )
 
         db_transaction.customer_name = transaction_data.customerName
@@ -117,6 +132,10 @@ def update_transaction(db: Session, transaction_id: int, transaction_data: Trans
         db_transaction.due_amount = transaction_data.grandTotal - transaction_data.paidAmount
         db_transaction.grand_total = transaction_data.grandTotal
         db_transaction.date = transaction_data.date
+        if transaction_data.billType is not None:
+            db_transaction.bill_type = transaction_data.billType
+        if transaction_data.payment_mode is not None:
+            db_transaction.payment_mode = transaction_data.payment_mode
 
         db.commit()
         db.refresh(db_transaction)

@@ -1,5 +1,6 @@
 # Import all models so Base.metadata knows every table (for create_all).
-# Order matters for relationship resolution.
+# Order matters for relationship resolution — referenced tables must come first.
+from models.plan import Plan, StoreSubscription   # MON-01 — must be before Store
 from models.customer import Customer
 from models.store import Store
 from models.user_model import User
@@ -14,9 +15,16 @@ from models.rates_config import MetalRate
 from models.password_reset_token import PasswordResetToken
 from models.girvi_loan import GirviLoan, GirviPhoto, GirviInterestPayment
 from models.metal_exchange import MetalExchange
+from models.karigar import Karigar
+from models.workflow_template import WorkflowTemplate, WorkflowTemplateStep
 from models.order_repair import Order
+from models.order_step import OrderStep
 from models.stock_item import StockItem, StockMovement
 from models.idempotency import PaymentIdempotency
+from models.piece_lifecycle import PieceLifecycleEvent
+from models.push_token import PushToken
+from models.loyalty import LoyaltyConfig, LoyaltyLedger  # FEAT-05
+from models.otp_token import OtpToken                     # 2FA
 
 __all__ = [
     "Customer",
@@ -35,8 +43,14 @@ __all__ = [
     "GirviPhoto",
     "GirviInterestPayment",
     "MetalExchange",
+    "Karigar",
+    "WorkflowTemplate",
+    "WorkflowTemplateStep",
     "Order",
+    "OrderStep",
     "StockItem",
     "StockMovement",
     "PaymentIdempotency",
+    "PieceLifecycleEvent",
+    "PushToken",
 ]

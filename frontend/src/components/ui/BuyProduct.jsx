@@ -8,6 +8,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
   const [error, setError] = useState("");
 
   const initialProduct = {
+    _uid: `init-${Math.random()}`,
     productName: "",
     metalType: "gold",
     weight: "",
@@ -59,7 +60,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
     setProducts(newProducts);
   };
 
-  const addProduct = () => setProducts([...products, {...initialProduct}]);
+  const addProduct = () => setProducts([...products, { ...initialProduct, _uid: `new-${Math.random()}` }]);
   
   const removeProduct = (index) => {
     if (products.length > 1) {
@@ -157,7 +158,7 @@ const BuyProduct = ({ customer, isOpen, onClose }) => {
                     </div>
 
                     {products.map((product, index) => (
-                      <div key={index} className="mb-6 p-4 border border-gray-200 rounded-lg relative">
+                      <div key={product._uid || index} className="mb-6 p-4 border border-gray-200 rounded-lg relative">
                         {products.length > 1 && (
                           <button
                             onClick={() => removeProduct(index)}

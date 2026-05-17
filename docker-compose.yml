@@ -1,0 +1,96 @@
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: customer_mgmt_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root@123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-customer_management_app}
+      MYSQL_USER: ${MYSQL_USER:-app_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-app_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - customer_mgmt_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: customer_mgmt_backend
+    environment:
+      DATABASE_URL: "mysql+pymysql://${MYSQL_USER:-app_user}:${MYSQL_PASSWORD:-app_password}@db:3306/${MYSQL_DATABASE:-customer_management_app}"
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ENV: ${ENV:-development}
+      DEBUG: ${DEBUG:-True}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - customer_mgmt_network
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: customer_mgmt_frontend
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
+      REACT_APP_API_TIMEOUT: ${REACT_APP_API_TIMEOUT:-30000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    networks:
+      - customer_mgmt_network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # (Optional) phpMyAdmin for database management
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: customer_mgmt_phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_USER: ${MYSQL_USER:-app_user}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-app_password}
+      PMA_PORT: 3306
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    networks:
+      - customer_mgmt_network
+    depends_on:
+      - db
+    restart: unless-stopped
+
+networks:
+  customer_mgmt_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local

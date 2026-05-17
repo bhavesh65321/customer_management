@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import ShopLayout from "../components/layout/ShopLayout";
 import { API_BASE, authHeaders } from "../api";
+import { Spinner } from "../components/ui/Spinner";
 
 export default function RemindersPage() {
   const [summary, setSummary] = useState([]);
+  const [channels, setChannels] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
@@ -14,6 +16,10 @@ export default function RemindersPage() {
       .then(setSummary)
       .catch(() => setSummary([]))
       .finally(() => setLoading(false));
+    fetch(`${API_BASE}/api/notifications/channels`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setChannels)
+      .catch(() => setChannels(null));
   }, []);
 
   const sendReminders = () => {
@@ -30,12 +36,25 @@ export default function RemindersPage() {
     <ShopLayout>
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 mb-4">Reminders</h1>
-        <p className="text-gray-600 mb-6">
-          Send payment reminders to customers who have an outstanding balance (email and/or SMS, if configured).
+        <p className="text-gray-600 mb-4">
+          Send payment reminders to customers with an outstanding balance. Delivery uses your configured channels:
+          email, SMS, WhatsApp (Twilio), and optional mobile push (Firebase) when customers have registered a device
+          token.
         </p>
+        {channels && (
+          <div className="mb-6 p-4 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700 space-y-1">
+            <p className="font-medium text-gray-800">Channel status</p>
+            <ul className="list-disc list-inside">
+              <li>Email: {channels.emailConfigured ? "configured" : "not configured"}</li>
+              <li>SMS: {channels.smsConfigured ? "configured" : "not configured"}</li>
+              <li>WhatsApp: {channels.whatsappConfigured ? "configured" : "not configured"}</li>
+              <li>Push (FCM): {channels.pushConfigured ? "configured" : "not configured"}</li>
+            </ul>
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" />
+            <Spinner size="lg" center />
           </div>
         ) : (
           <>
@@ -68,11 +87,24 @@ export default function RemindersPage() {
               {sending ? "Sending…" : "Send reminders to all"}
             </button>
             {result && (
-              <p className={`mt-4 text-sm ${result.error ? "text-red-600" : "text-green-600"}`}>
-                {result.error
-                  ? "Failed to send reminders."
-                  : `Done. ${result.notificationsSent ?? 0} notification(s) sent to ${result.customersProcessed ?? 0} customer(s).`}
-              </p>
+              <div className={`mt-4 text-sm ${result.error ? "text-red-600" : "text-green-700"}`}>
+                {result.error ? (
+                  "Failed to send reminders."
+                ) : (
+                  <>
+                    <p>
+                      Done. {result.notificationsSent ?? 0} notification attempt(s) across channels for{" "}
+                      {result.customersProcessed ?? 0} customer(s).
+                    </p>
+                    {result.channels && (
+                      <p className="mt-1 text-gray-600">
+                        Email: {result.channels.email ?? 0}, SMS: {result.channels.sms ?? 0}, WhatsApp:{" "}
+                        {result.channels.whatsapp ?? 0}, Push: {result.channels.push ?? 0}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </>
         )}
