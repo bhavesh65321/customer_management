@@ -24,6 +24,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import requests
+import time
+import pymysql
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -213,8 +216,27 @@ def save_rates_to_db(db, rates: dict) -> int:
         )
         db.add(record)
         inserted += 1
-    db.commit()
-    logger.info("Saved %d metal rate record(s) from %s", inserted, rates.get("source", "unknown"))
+    # Commit with retries to tolerate transient DB disconnects (Railway/remote MySQL)
+    max_attempts = 3
+    backoff = 1
+    for attempt in range(1, max_attempts + 1):
+        try:
+            db.commit()
+            logger.info("Saved %d metal rate record(s) from %s", inserted, rates.get("source", "unknown"))
+            break
+        except (SAOperationalError, pymysql.err.OperationalError) as exc:
+            db.rollback()
+            logger.warning(
+                "DB commit attempt %d/%d failed: %s",
+                attempt,
+                max_attempts,
+                exc,
+            )
+            if attempt == max_attempts:
+                logger.exception("Failed to commit metal rates after %d attempts", max_attempts)
+                raise
+            time.sleep(backoff)
+            backoff *= 2
     return inserted
 
 
