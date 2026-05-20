@@ -90,26 +90,10 @@ def _run_migrations():
 
 from sqlalchemy import text
 
-# Try to initialize DB schema on startup, but don't crash if DB is temporarily unreachable
-# This allows the app to start even if Railway/remote MySQL has network latency or is briefly down
-try:
-    with engine.connect() as conn:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                email VARCHAR(100),
-                hashed_password VARCHAR(255)
-            )
-        """))
-        conn.commit()
-    logger.info("✓ Database schema initialized successfully")
-except Exception as exc:
-    logger.warning(
-        "⚠ Database schema initialization failed (DB may be temporarily unreachable). "
-        "This is normal during startup if DB is remote (Railway) or delayed. "
-        "Error: %s",
-        exc,
-    )
+# Note: DB schema initialization (users table) is deferred to first API request.
+# This allows the app to start even if Railway/remote MySQL is temporarily unreachable.
+# The schema will be created lazily when first needed by a request that requires DB access.
+logger.info("Database connection deferred to first request (lazy initialization)")
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _UPLOADS_DIR = _BACKEND_DIR / "uploads"
