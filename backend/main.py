@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,6 +50,8 @@ from utils.logger import log_app_event
 from utils.errors import ErrorCode, make_error_body
 from config.settings import ENV, CORS_ORIGINS
 
+logger = logging.getLogger(__name__)
+
 # BE-03: APScheduler for recurring background jobs
 from apscheduler.schedulers.background import BackgroundScheduler
 from services.task_queue import register_scheduled_jobs
@@ -87,15 +90,26 @@ def _run_migrations():
 
 from sqlalchemy import text
 
-with engine.connect() as conn:
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            email VARCHAR(100),
-            hashed_password VARCHAR(255)
-        )
-    """))
-    conn.commit()
+# Try to initialize DB schema on startup, but don't crash if DB is temporarily unreachable
+# This allows the app to start even if Railway/remote MySQL has network latency or is briefly down
+try:
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                email VARCHAR(100),
+                hashed_password VARCHAR(255)
+            )
+        """))
+        conn.commit()
+    logger.info("✓ Database schema initialized successfully")
+except Exception as exc:
+    logger.warning(
+        "⚠ Database schema initialization failed (DB may be temporarily unreachable). "
+        "This is normal during startup if DB is remote (Railway) or delayed. "
+        "Error: %s",
+        exc,
+    )
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _UPLOADS_DIR = _BACKEND_DIR / "uploads"
