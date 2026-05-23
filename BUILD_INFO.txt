@@ -1,0 +1,5 @@
+Build Version: 2026-05-23-Latest
+Status: Deployed with Railway public proxy (autoxtrack.proxy.rlwy.net:29191)
+Database Connection: Using public TCP proxy for external connectivity from Render
+Updated: DATABASE_URL environment variable in Render
+Next: Auto-trigger Render deployment on this commit
