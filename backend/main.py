@@ -10,6 +10,19 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from routes.auth import router as auth_router
 from routes.customer import router as customer_router
 from config.database import Base, engine
+from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
+
+def _is_database_available() -> bool:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception as exc:
+        logger.warning("Database unavailable at startup, skipping scheduled jobs: %s", exc)
+        return False
+
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from routes.transactional_route import router as transaction_routes
@@ -50,14 +63,13 @@ from utils.logger import log_app_event
 from utils.errors import ErrorCode, make_error_body
 from config.settings import ENV, CORS_ORIGINS
 
-logger = logging.getLogger(__name__)
+
 
 # BE-03: APScheduler for recurring background jobs
 from apscheduler.schedulers.background import BackgroundScheduler
 from services.task_queue import register_scheduled_jobs
 from config.database import SessionLocal as _SessionLocal
 _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-
 # ---------------------------------------------------------------------------
 # DB schema — additive column patches for existing deployments
 # ---------------------------------------------------------------------------
@@ -144,13 +156,20 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.on_event("startup")
 async def on_startup():
     log_app_event("info", "startup", message="Customer Management API started successfully", version="1.0.0")
-    # BE-03: start scheduled background jobs
-    try:
-        register_scheduled_jobs(_scheduler, _SessionLocal)
-        _scheduler.start()
-        log_app_event("info", "scheduler_started", jobs=len(_scheduler.get_jobs()))
-    except Exception as exc:
-        log_app_event("error", "scheduler_start_failed", error=str(exc))
+    # BE-03: start scheduled background jobs only when DB is reachable
+    if _is_database_available():
+        try:
+            register_scheduled_jobs(_scheduler, _SessionLocal)
+            _scheduler.start()
+            log_app_event("info", "scheduler_started", jobs=len(_scheduler.get_jobs()))
+        except Exception as exc:
+            log_app_event("error", "scheduler_start_failed", error=str(exc))
+    else:
+        log_app_event(
+            "warning",
+            "scheduler_skipped",
+            message="Database unavailable; scheduled jobs disabled until DB connection is restored",
+        )
     # MON-01/MON-02: seed default subscription plans (idempotent)
     try:
         from services.billing_service import seed_plans
@@ -161,7 +180,7 @@ async def on_startup():
         finally:
             _db.close()
     except Exception as exc:
-        log_app_event("error", "billing_seed_failed", error=str(exc))
+        log_app_event("warning", "billing_seed_failed", error=str(exc))
 
 @app.on_event("shutdown")
 async def on_shutdown():
