@@ -7,6 +7,7 @@ Tests for authentication endpoints:
   GET  /api/auth/companies
   POST /api/auth/refresh
   GET  /api/auth/me
+  hecking build is latest
 """
 
 import pytest

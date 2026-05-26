@@ -345,3 +345,11 @@ app.include_router(reports_router, prefix="/api/reports")
 app.include_router(loyalty_router, prefix="/api/loyalty")
 app.include_router(customer_portal_router)
 
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
