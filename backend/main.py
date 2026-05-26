@@ -142,9 +142,9 @@ app = FastAPI(
     },
     # SEC-04: API docs are only available in non-production environments.
     # Set ENV=production in .env to disable /api/docs, /api/redoc, /api/openapi.json
-    docs_url="/api/docs" if ENV != "production" else None,
-    redoc_url="/api/redoc" if ENV != "production" else None,
-    openapi_url="/api/openapi.json" if ENV != "production" else None,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json"
 )
 app.mount("/uploads", StaticFiles(directory=str(_UPLOADS_DIR)), name="uploads")
 
@@ -345,11 +345,4 @@ app.include_router(reports_router, prefix="/api/reports")
 app.include_router(loyalty_router, prefix="/api/loyalty")
 app.include_router(customer_portal_router)
 
-@app.get("/")
-def root():
-    return {"status": "ok"}
-
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
 
