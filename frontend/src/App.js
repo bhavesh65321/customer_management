@@ -22,7 +22,7 @@ import CustomerPortalDashboard from "./pages/customer-portal/CustomerPortalDashb
 import CustomerProfile from "./pages/customer-portal/CustomerProfile";
 import CustomerInvoices from "./pages/customer-portal/CustomerInvoices";
 import CustomerOrders from "./pages/customer-portal/CustomerOrders";
-import PlaceholderPage from "./pages/PlaceholderPage";
+// import PlaceholderPage from "./pages/PlaceholderPage"; // Reserved for future use
 import AdminDashboard from "./pages/AdminDashboard";
 import StoreDetailPage from "./pages/StoreDetailPage";
 import ShopPage from "./pages/ShopPage";
@@ -63,7 +63,7 @@ import BillingPage from "./pages/BillingPage";
 import LandingPage from "./pages/LandingPage";
 import OnboardingWizard from "./pages/OnboardingWizard";
 import SignupPage from "./pages/SignupPage";
-// PlaceholderPage kept for future use but suppressed from lint
+// PlaceholderPage intentionally not imported - reserved for future use
 
 function App() {
   return (

@@ -18,7 +18,7 @@ const ROLE_COLORS = {
   staff:   "bg-blue-100 text-blue-700 border border-blue-200",
   owner:   "bg-amber-100 text-amber-700 border border-amber-200",
 };
-const roleBadge = (role) => role || "staff";
+// const roleBadge = (role) => role || "staff"; // Reserved for future use
 
 const EMPTY_FORM = {
   name: "", email: "", password: "", designation: "",
